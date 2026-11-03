@@ -72,7 +72,11 @@ export const products = [
   { id: 'P001', name: '北海银滩海景酒店 · 雅致大床房', merchant: '北海银滩海景酒店', type: '住宿', price: 399, original: 499, rating: 4.9, distance: '银滩商圈', image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=900&q=84' },
   { id: 'P002', name: '海岸海鲜风味双人套餐', merchant: '海岸海鲜风味餐厅', type: '美食', price: 168, original: 238, rating: 4.8, distance: '海景大道', image: 'https://images.unsplash.com/photo-1559847844-5315695dadae?w=900&q=84' },
   { id: 'P003', name: '北海老街文化体验通票', merchant: '北海老街文化体验馆', type: '玩乐', price: 128, original: 180, rating: 4.8, distance: '海城区', image: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?w=900&q=84' },
-  { id: 'P004', name: '银滩海上运动双人体验', merchant: '银滩海上运动中心', type: '玩乐', price: 228, original: 328, rating: 4.9, distance: '银滩景区', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=900&q=84' }
+  { id: 'P004', name: '银滩海上运动双人体验', merchant: '银滩海上运动中心', type: '玩乐', price: 228, original: 328, rating: 4.9, distance: '银滩景区', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=900&q=84' },
+  { id: 'P005', name: '面朝大海 · 海景度假双床房', merchant: '北海银滩海景酒店', type: '住宿', price: 459, original: 599, rating: 4.9, distance: '银滩度假区', image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=900&q=85' },
+  { id: 'P006', name: '海风日落 · 疍家海鲜双人晚餐', merchant: '海岸海鲜风味餐厅', type: '美食', price: 198, original: 288, rating: 4.8, distance: '海景大道', image: 'https://images.unsplash.com/photo-1547592180-85f173990554?w=900&q=85' },
+  { id: 'P007', name: '北海老街 · 百年骑楼漫步体验', merchant: '北海老街文化体验馆', type: '玩乐', price: 78, original: 108, rating: 4.7, distance: '海城区老街', image: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=900&q=85' },
+  { id: 'P008', name: '海岸桨板 · 轻运动体验课', merchant: '银滩海上运动中心', type: '玩乐', price: 139, original: 199, rating: 4.9, distance: '银滩景区', image: 'https://images.unsplash.com/photo-1530053969600-caed2596d242?w=900&q=85' }
 ]
 
 // Local demo allowlist only. Real ticket verification needs upstream ticket-system checks.
