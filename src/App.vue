@@ -39,7 +39,7 @@ const themeOverrides = {
   <n-config-provider :theme-overrides="themeOverrides">
     <n-message-provider placement="top">
       <div class="app-shell">
-        <header class="site-header">
+        <header v-if="route !== 'visitor'" class="site-header">
           <button class="brand-home" @click="go('')" aria-label="返回首页">
             <span class="brand-mark"><Waves :size="25" :stroke-width="2.5"/></span>
             <span class="brand-words"><strong>北海城投<span>· 票根经济</span></strong><small>BEIHAI CITY INVESTMENT · DIGITAL PLATFORM</small></span>
@@ -98,7 +98,7 @@ const themeOverrides = {
         <VisitorView v-else-if="route === 'visitor'"/>
         <BackofficeView v-else-if="route === 'backoffice'"/>
 
-        <footer class="site-footer"><span>北海城投 · 票根经济全域数字化运营平台</span><span>交互原型演示 · 核验、支付、清分及统计均为模拟数据</span></footer>
+        <footer v-if="route !== 'visitor'" class="site-footer"><span>北海城投 · 票根经济全域数字化运营平台</span><span>交互原型演示 · 核验、支付、清分及统计均为模拟数据</span></footer>
       </div>
     </n-message-provider>
   </n-config-provider>
