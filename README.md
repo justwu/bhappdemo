@@ -57,3 +57,5 @@ src/
     BackofficeView.vue
 .github/workflows/deploy-pages.yml
 ```
+
+Cloudflare Pages deployment: `main` branch auto-builds to `https://bhappdemo.pages.dev`.
