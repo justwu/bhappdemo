@@ -6,6 +6,7 @@ const initial = {
   verifiedTicket: null,
   ticketVerifications: [],
   couponInstances: [],
+  offlineTransactions: [],
   claimedCoupons: [],
   usedCoupons: [],
   orders: [],
@@ -139,12 +140,47 @@ export function redeemOffline(raw, merchantId) {
   logAudit('平台核销人员','线下消费券核销',coupon.title+' / '+instance.code+' / '+merchant.name)
   return {ok:true,message:'核销成功，优惠 ¥'+coupon.amount+'，商户：'+merchant.name,instance}
 }
+// Local-only cash desk simulation. On a live service this must be a trusted
+// backend transaction coupled to payment callbacks and atomic voucher redemption.
+export function createOfflinePayment({merchantId,originalAmount,couponCode='',paymentMethod='微信支付'}) {
+  const merchant=state.merchants.find(m=>m.id===merchantId&&m.status==='正常')
+  if(!merchant)return {ok:false,message:'请选择营业中的合作商户'}
+  const total=Number(originalAmount)
+  if(!Number.isFinite(total)||total<=0||total>999999)return {ok:false,message:'消费金额需大于 0 且不超过 999999 元'}
+  const money2=n=>Math.round((n+Number.EPSILON)*100)/100
+  let coupon=null,instance=null,discount=0
+  if(String(couponCode||'').trim()) {
+    const code=String(couponCode).trim().replace(/\s+/g,'').toUpperCase()
+    instance=state.couponInstances.find(i=>i.code===code)
+    if(!instance)return {ok:false,message:'券码不存在，请检查游客出示的券码'}
+    if(instance.status!=='未使用')return {ok:false,message:'该券已核销，请勿重复支付抵扣'}
+    if(instance.expiresAt&&new Date(instance.expiresAt+'T23:59:59').getTime()<Date.now())return {ok:false,message:'该消费券已过期'}
+    coupon=state.coupons.find(c=>c.id===instance.couponId&&c.status==='投放中')
+    if(!coupon)return {ok:false,message:'消费券类型已停用'}
+    const type={住宿:'酒店住宿',美食:'特色餐饮',玩乐:'景区玩乐'}[coupon.category]
+    if(type&&merchant.category!==type)return {ok:false,message:'所选门店经营业态与消费券不匹配'}
+    if(total<coupon.threshold)return {ok:false,message:'未达到该券的满 '+coupon.threshold+' 元使用门槛'}
+    discount=Math.min(total,coupon.amount)
+  }
+  if(!['微信支付','支付宝','现金','银行卡'].includes(paymentMethod))return {ok:false,message:'不支持的支付方式'}
+  const transaction={id:uid('POS'),merchantId:merchant.id,merchantName:merchant.name,original:money2(total),discount:money2(discount),amount:money2(total-discount),couponCode:instance?.code||'',couponId:coupon?.id||null,paymentMethod,channel:'线下到店',status:'模拟支付成功',time:stamp()}
+  if(instance){
+    instance.status='已核销';instance.redeemedAt=transaction.time;instance.merchantId=merchant.id;instance.merchantName=merchant.name;instance.redeemChannel='线下到店支付'
+    coupon.redeemed=(coupon.redeemed||0)+1
+    if(!state.usedCoupons.includes(coupon.id))state.usedCoupons.push(coupon.id)
+    const camp=state.campaigns.find(a=>a.id===coupon.campaignId)
+    if(camp)camp.redeemed=(camp.redeemed||0)+1
+  }
+  state.offlineTransactions.unshift(transaction)
+  logAudit('演示门店收银','线下模拟支付',transaction.id+' / '+merchant.name+' / ¥'+money(transaction.amount))
+  return {ok:true,message:'线下模拟付款成功，实付 ¥'+money(transaction.amount),transaction}
+}
 export function purchase(product, couponId) {
   const inst=state.couponInstances.find(i=>i.couponId===couponId&&i.status==='未使用')
   const coupon=inst&&state.coupons.find(c=>c.id===couponId&&c.status==='投放中'&&c.category===product.type&&product.price>=c.threshold)
   const amount=Math.max(0,product.price-(coupon?.amount||0))
   if(coupon){inst.status='已核销';inst.redeemedAt=stamp();inst.redeemChannel='线上模拟下单';inst.merchantName=product.merchant;state.usedCoupons.push(coupon.id);coupon.redeemed=(coupon.redeemed||0)+1}
-  const order={id:uid('OD'),product:product.name,merchant:product.merchant,original:product.price,discount:coupon?.amount||0,amount,status:'待核销',time:stamp()}
+  const order={id:uid('OD'),product:product.name,merchant:product.merchant,original:product.price,discount:coupon?.amount||0,amount,status:'待核销',channel:'线上预订',paymentMethod:'模拟在线支付',time:stamp()}
   state.orders.unshift(order)
   logAudit('演示游客','模拟支付','下单 '+product.name+'，金额 ¥'+money(amount))
   return order
