@@ -1,97 +1,245 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { NButton, NInput, NModal, NSelect, NTag, NEmpty, useMessage } from 'naive-ui'
-import { ArrowRight, ArrowUpRight, CheckCircle2, ChevronRight, Compass, CreditCard, Gift, House, MapPin, ScanLine, Search, ShoppingBag, Sparkles, Star, Ticket, UserRound, ShieldCheck } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { NButton, NInput, NSelect, NTag, NEmpty, useMessage } from 'naive-ui'
+import {
+  ArrowLeft, ArrowRight, BadgeCheck, Bell, Check, CheckCircle2, ChevronRight,
+  ClipboardCheck, Compass, CreditCard, Gift, Heart, Home, MapPin,
+  Search, ShieldCheck, ShoppingBag, Sparkles, Star, Ticket,
+  UserRound, Wallet, Waves, X
+} from 'lucide-vue-next'
 import { state, products, verifyTicket, claimCoupon, purchase, fmt } from '../store.js'
+import '../h5.css'
+
 const message = useMessage()
-const tab=ref('home'), search=ref(''), category=ref('全部'), ticketCode=ref('BH2026'), ticketName=ref('演示游客')
-const buying=ref(null), couponChoice=ref('none')
-const menu=[{id:'home',label:'首页',icon:House},{id:'verify',label:'票根核验',icon:ScanLine},{id:'coupons',label:'优惠权益',icon:Gift},{id:'explore',label:'北海好物',icon:Compass},{id:'orders',label:'我的订单',icon:ShoppingBag},{id:'profile',label:'个人中心',icon:UserRound}]
-const categories=[{name:'精选酒店',key:'住宿',emoji:'🏨',tone:'blue'},{name:'海鲜美食',key:'美食',emoji:'🦐',tone:'peach'},{name:'海上玩乐',key:'玩乐',emoji:'🌊',tone:'mint'},{name:'全部精选',key:'全部',emoji:'🎁',tone:'purple'}]
-const filtered=computed(()=>products.filter(p=>(category.value==='全部'||p.type===category.value)&&(!search.value||(p.name+p.merchant).includes(search.value))&&state.merchants.some(m=>m.name===p.merchant&&m.status==='正常')))
-const coupons=computed(()=>state.coupons.filter(c=>c.status==='投放中'))
-const applicable=computed(()=>!buying.value?[]:coupons.value.filter(c=>state.claimedCoupons.includes(c.id)&&!state.usedCoupons.includes(c.id)&&c.category===buying.value.type&&buying.value.price>=c.threshold))
-const couponOptions=computed(()=>[{label:'暂不使用优惠券',value:'none'},...applicable.value.map(c=>({label:c.title+' · 立减 ¥'+c.amount,value:c.id}))])
-const payable=computed(()=>buying.value?Math.max(0,buying.value.price-(applicable.value.find(c=>c.id===couponChoice.value)?.amount||0)):0)
-function browse(cat='全部'){category.value=cat;tab.value='explore';window.scrollTo({top:0,behavior:'smooth'})}
-function verify(){const r=verifyTicket(ticketCode.value,ticketName.value);r.ok?message.success(r.message):message.warning(r.message);if(r.ok)tab.value='coupons'}
-function claim(id){const r=claimCoupon(id);r.ok?message.success(r.message):message.warning(r.message);if(!r.ok&&!state.ticketVerified)tab.value='verify'}
-function openBuy(p){buying.value=p;couponChoice.value='none'}
-function pay(){if(!buying.value)return;const o=purchase(buying.value,couponChoice.value);message.success('模拟支付成功，订单 '+o.id);buying.value=null;tab.value='orders'}
+const page = ref('home')
+const search = ref('')
+const filter = ref('全部')
+const ticketCode = ref('BH2026')
+const ticketName = ref('演示游客')
+const couponFilter = ref('available')
+const buying = ref(null)
+const selectedCoupon = ref('none')
+
+const tabs = [
+  { id: 'home', label: '首页', icon: Home },
+  { id: 'explore', label: '逛北海', icon: Compass },
+  { id: 'verify', label: '票根', icon: Ticket },
+  { id: 'coupons', label: '优惠券', icon: Gift },
+  { id: 'profile', label: '我的', icon: UserRound }
+]
+const categories = [
+  { label: '酒店民宿', emoji: '🏨', type: '住宿', color: '#e9f2ff' },
+  { label: '海鲜美食', emoji: '🦐', type: '美食', color: '#fff0e9' },
+  { label: '景区游玩', emoji: '🌴', type: '玩乐', color: '#e6f7ed' },
+  { label: '海上运动', emoji: '⛵', type: '玩乐', color: '#eaf4ff' },
+  { label: '城市购物', emoji: '🛍️', type: '全部', color: '#fff0ee' },
+  { label: '停车出行', emoji: '🚙', type: '全部', color: '#eff0ff' },
+  { label: '特色伴手礼', emoji: '🎁', type: '全部', color: '#fff5e3' },
+  { label: '全部服务', emoji: '✨', type: '全部', color: '#e7f7f8' }
+]
+const catalogue = computed(() => products.filter(p => state.merchants.some(m => m.name === p.merchant && m.status === '正常')))
+const featured = computed(() => catalogue.value.slice(0, 4))
+const filtered = computed(() => catalogue.value.filter(p =>
+  (filter.value === '全部' || p.type === filter.value) &&
+  (!search.value.trim() || (p.name + p.merchant + p.distance).includes(search.value.trim()))
+))
+const liveCoupons = computed(() => state.coupons.filter(c => c.status === '投放中'))
+const shownCoupons = computed(() => couponFilter.value === 'mine'
+  ? state.coupons.filter(c => state.claimedCoupons.includes(c.id))
+  : liveCoupons.value)
+const applicable = computed(() => buying.value ? liveCoupons.value.filter(c =>
+  state.claimedCoupons.includes(c.id) &&
+  !state.usedCoupons.includes(c.id) &&
+  c.category === buying.value.type &&
+  buying.value.price >= c.threshold
+) : [])
+const couponOptions = computed(() => [
+  { label: '不使用优惠券', value: 'none' },
+  ...applicable.value.map(c => ({ label: c.title + ' · 立减 ¥' + c.amount, value: c.id }))
+])
+const finalPrice = computed(() => {
+  if (!buying.value) return 0
+  const discount = applicable.value.find(c => c.id === selectedCoupon.value)?.amount || 0
+  return Math.max(0, buying.value.price - discount)
+})
+const activeTab = computed(() => page.value === 'orders' ? 'profile' : page.value)
+const ticketStatus = computed(() => state.ticketVerified ? '已完成资格核验' : '等待核验票根')
+
+function navigate(target) {
+  page.value = target
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+function browse(type = '全部') {
+  filter.value = type
+  search.value = ''
+  navigate('explore')
+}
+function runVerify() {
+  const outcome = verifyTicket(ticketCode.value, ticketName.value)
+  if (outcome.ok) {
+    message.success(outcome.message)
+    couponFilter.value = 'available'
+    navigate('coupons')
+  } else message.warning(outcome.message)
+}
+function runClaim(coupon) {
+  const outcome = claimCoupon(coupon.id)
+  if (outcome.ok) message.success(outcome.message)
+  else {
+    message.warning(outcome.message)
+    if (!state.ticketVerified) navigate('verify')
+  }
+}
+function startBuy(p) {
+  buying.value = p
+  selectedCoupon.value = 'none'
+}
+function completeBuy() {
+  if (!buying.value) return
+  const order = purchase(buying.value, selectedCoupon.value)
+  buying.value = null
+  message.success('模拟支付成功，订单号：' + order.id)
+  navigate('orders')
+}
+function closeBuy() { buying.value = null }
+function onKeydown(e) { if (e.key === 'Escape' && buying.value) closeBuy() }
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
+
 <template>
-  <div class="visitor-shell">
-    <div class="visitor-nav"><div class="visitor-nav-inner">
-      <span class="visitor-location"><MapPin :size="15"/> 广西 · 北海 <ChevronRight :size="13"/></span>
-      <nav class="visitor-menu"><button v-for="item in menu" :key="item.id" :class="{selected:tab===item.id}" @click="tab=item.id"><component :is="item.icon" :size="15"/>{{item.label}}</button></nav>
-      <div class="visitor-welcome"><UserRound :size="16"/> 演示游客</div>
-    </div></div>
-    <div v-if="tab==='home'" class="visitor-container">
-      <section class="visitor-hero">
-        <div class="visitor-hero-image"></div>
-        <div class="visitor-hero-content">
-          <div class="visitor-hero-tag"><Sparkles :size="15"/> 北海票根 · 城市好礼</div>
-          <h1>把美好留在北海，<br/><span>让每张票根都值得期待。</span></h1>
-          <p>观演、观赛、游北海。一次票根核验，解锁银滩美宿、海鲜美食与滨海玩乐专属福利。</p>
-          <div class="visitor-hero-actions"><n-button size="large" color="#fff" text-color="#1459ac" round @click="tab='verify'">立即核验票根 <ArrowRight :size="17"/></n-button><button class="hero-link" @click="tab='coupons'">查看专属权益 <ArrowUpRight :size="16"/></button></div>
-        </div><div class="hero-sticker"><span>BEIHAI</span><strong>发现<br/>北海</strong><small>THE BLUE CITY</small></div>
+  <div class="h5-stage">
+    <div class="h5-device">
+      <div class="h5-topbar">
+        <div class="h5-location"><span class="h5-logo"><Waves :size="19" :stroke-width="2.6"/></span><div><strong>北海票根生活</strong><small><MapPin :size="11"/> 广西 · 北海</small></div></div>
+        <button class="h5-top-action" type="button" aria-label="查看我的订单" @click="navigate('orders')"><ShoppingBag :size="19"/><i v-if="state.orders.length" class="h5-bubble">{{state.orders.length}}</i></button>
+      </div>
+
+      <main class="h5-main">
+        <!-- Landing / Home -->
+        <template v-if="page === 'home'">
+          <section class="h5-home-head">
+            <div class="h5-greeting"><span>HI, BEIHAI <span class="h5-sun">☀</span></span><strong>发现北海的每一份惊喜</strong></div>
+            <button class="h5-searchbox" type="button" @click="browse()"><Search :size="17"/><span>搜酒店、海鲜、美食、景区好物</span><span class="h5-search-go">搜索</span></button>
+          </section>
+          <section class="h5-hero">
+            <img alt="蓝天海浪与海滩" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=950&q=84" fetchpriority="high"/>
+            <div class="h5-hero-mask"></div>
+            <div class="h5-hero-copy">
+              <span class="h5-hero-kicker"><Sparkles :size="12"/> 城市票根 · 北海礼遇</span>
+              <strong>一张票根<br/>玩转<span>浪漫北海</span></strong>
+              <p>看演出 · 逛银滩 · 吃海鲜</p>
+              <button type="button" @click="navigate('verify')">解锁专属权益 <ArrowRight :size="14"/></button>
+            </div>
+            <div class="h5-hero-dot"><i></i><i></i><i></i></div>
+          </section>
+
+          <div class="h5-ticker"><span class="h5-ticker-symbol"><Bell :size="14"/></span><b>北海优选</b><span>参与活动，即享专属票根消费好礼</span><ChevronRight :size="14"/></div>
+
+          <section class="h5-category-panel">
+            <button v-for="item in categories" :key="item.label" class="h5-category" @click="browse(item.type)">
+              <span class="h5-category-icon" :style="{ background: item.color }">{{item.emoji}}</span>
+              <small>{{item.label}}</small>
+            </button>
+          </section>
+
+          <section class="h5-ticket-promo" @click="navigate('verify')">
+            <div class="h5-ticket-promo-left"><span><Ticket :size="14"/> 票根专属权益</span><strong>{{state.ticketVerified ? '你的票根已激活' : '带上票根，领取北海好礼'}}</strong><small>{{state.ticketVerified ? '专属消费券等你领取' : '一键核验，解锁酒店、美食专属优惠'}}</small><button type="button">{{state.ticketVerified ? '去领优惠' : '立即核验'}} <ChevronRight :size="13"/></button></div>
+            <span class="h5-ticket-art">🎟️</span>
+          </section>
+
+          <section class="h5-section">
+            <header class="h5-section-head"><div><small>EXCLUSIVE COUPONS</small><h2>北海礼遇券 <span>🎁</span></h2></div><button type="button" @click="navigate('coupons')">更多 <ChevronRight :size="15"/></button></header>
+            <div class="h5-coupon-scroll">
+              <article v-for="c in liveCoupons" :key="c.id" class="h5-coupon-mini">
+                <div><small>¥</small><strong>{{c.amount}}</strong><span>满 {{c.threshold}} 可用</span></div>
+                <div class="h5-coupon-mini-right"><strong>{{c.title}}</strong><small>{{c.category}}好礼 · 票根专享</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{state.usedCoupons.includes(c.id)?'已用':state.claimedCoupons.includes(c.id)?'已领':'领取'}}</button></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="h5-section">
+            <header class="h5-section-head"><div><small>HANDPICKED FOR YOU</small><h2>北海精选 <span class="h5-title-label">人气推荐</span></h2></div><button type="button" @click="browse()">查看全部 <ChevronRight :size="15"/></button></header>
+            <div class="h5-product-grid">
+              <article v-for="p in featured" :key="p.id" class="h5-product" @click="startBuy(p)">
+                <div class="h5-product-image"><img :src="p.image" :alt="p.name" loading="lazy"/><span>{{p.type}}精选</span></div>
+                <div class="h5-product-info"><strong>{{p.name}}</strong><small><MapPin :size="11"/> {{p.distance}} <b><Star :size="11" fill="currentColor"/>{{p.rating}}</b></small><div class="h5-product-footer"><span><em>¥</em>{{p.price}} <del>¥{{p.original}}</del></span><button aria-label="查看详情" type="button"><ArrowRight :size="15"/></button></div></div>
+              </article>
+            </div>
+          </section>
+          <div class="h5-bottom-hint">北海城投票根经济 · 让城市生活更精彩</div>
+        </template>
+
+        <!-- Ticket verification -->
+        <template v-else-if="page === 'verify'">
+          <div class="h5-subheading"><span>票根特权 · CITY PASS</span><h1>票根资格核验</h1><p>让每一张票根，都变成城市旅行的惊喜。</p></div>
+          <div class="h5-pass-card"><div class="h5-pass-top"><span>BEIHAI CITY PASS</span><span>2026 / DEMO</span></div><div class="h5-pass-center"><span>北海文旅</span><strong>城市活动通行证</strong><small>票根经济专属权益卡</small></div><div class="h5-pass-bottom"><span>NO. BH2026</span><span>✧ ✧ ✧</span></div></div>
+          <div v-if="state.ticketVerified" class="h5-success-line"><CheckCircle2 :size="18"/> {{ticketStatus}}，可以领取优惠券</div>
+          <section class="h5-card h5-verify-form"><h2><ClipboardCheck :size="20"/> 核验票根</h2><label for="h5-code">票根编号</label><n-input id="h5-code" v-model:value="ticketCode" size="large" placeholder="输入票根编号"/><label for="h5-person">持票人姓名</label><n-input id="h5-person" v-model:value="ticketName" size="large" placeholder="输入持票人姓名"/><div class="h5-demo-tip"><ShieldCheck :size="16"/><span>演示票根编号：<b>BH2026</b><br/>本页面不连接真实票务或实名系统。</span></div><n-button size="large" block type="primary" round @click="runVerify">{{state.ticketVerified?'重新核验':'确认核验'}} <ArrowRight :size="16"/></n-button></section>
+          <section class="h5-card h5-steps"><h2>核验后可以做什么？</h2><div v-for="(step,i) in ['验证票根资格，激活专属权益','领取住宿、餐饮、玩乐优惠券','选择心仪商品，模拟支付享折扣']" :key="step"><span>{{i+1}}</span><p>{{step}}</p></div></section>
+        </template>
+
+        <!-- Coupon wallet -->
+        <template v-else-if="page === 'coupons'">
+          <div class="h5-subheading"><span>BENEFITS · CITY GIFTS</span><h1>票根专属优惠</h1><p>给北海旅行加一点甜。</p></div>
+          <div class="h5-benefit-cover"><div><small>北海城市好礼</small><strong>专属福利 限时领</strong><span>享更多精彩，花更少的钱</span></div><span>🎁</span></div>
+          <div v-if="!state.ticketVerified" class="h5-notice-action"><div><Ticket :size="18"/><span>领取前请先核验票根</span></div><button type="button" @click="navigate('verify')">立即去核验 <ArrowRight :size="13"/></button></div>
+          <div class="h5-coupon-tabs"><button type="button" :class="{active:couponFilter==='available'}" @click="couponFilter='available'">可领取</button><button type="button" :class="{active:couponFilter==='mine'}" @click="couponFilter='mine'">我的卡券 <span>{{state.claimedCoupons.length}}</span></button></div>
+          <div v-if="shownCoupons.length" class="h5-coupon-list">
+            <article v-for="c in shownCoupons" :key="c.id" class="h5-voucher"><div class="h5-voucher-value"><span><em>¥</em>{{c.amount}}</span><small>满 {{c.threshold}} 可用</small></div><div class="h5-voucher-detail"><span>票根权益 · 北海精选</span><strong>{{c.title}}</strong><small>适用于{{c.category}}类精选商品</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{state.usedCoupons.includes(c.id)?'已使用':state.claimedCoupons.includes(c.id)?'已领取':'立即领取'}}</button></div></article>
+          </div>
+          <div v-else class="h5-empty"><NEmpty description="还没有领取卡券"/><n-button type="primary" round @click="couponFilter='available'">去领取</n-button></div>
+          <div class="h5-coupon-footnote">温馨提示：核验、领券、支付均为模拟体验，实际优惠以正式平台规则为准。</div>
+        </template>
+
+        <!-- Shopping -->
+        <template v-else-if="page === 'explore'">
+          <div class="h5-subheading h5-explore-heading"><span>DISCOVER BEIHAI</span><h1>北海好物</h1><p>精选本地美食与旅行体验</p></div>
+          <div class="h5-explore-search"><Search :size="18"/><input v-model="search" type="search" placeholder="搜索商户、酒店或商品"/><button v-if="search" type="button" aria-label="清除搜索" @click="search=''"><X :size="16"/></button></div>
+          <div class="h5-filter-row"><button v-for="cat in ['全部','住宿','美食','玩乐']" :key="cat" type="button" :class="{active:filter===cat}" @click="filter=cat">{{cat}}</button></div>
+          <div class="h5-find-count">为你找到 <b>{{filtered.length}}</b> 个北海精选好物</div>
+          <div class="h5-product-grid">
+            <article v-for="p in filtered" :key="p.id" class="h5-product" @click="startBuy(p)"><div class="h5-product-image"><img :src="p.image" :alt="p.name" loading="lazy"/><span>{{p.type}}精选</span></div><div class="h5-product-info"><strong>{{p.name}}</strong><small><MapPin :size="11"/> {{p.distance}} <b><Star :size="11" fill="currentColor"/>{{p.rating}}</b></small><div class="h5-product-footer"><span><em>¥</em>{{p.price}} <del>¥{{p.original}}</del></span><button type="button" aria-label="立即预订"><ArrowRight :size="15"/></button></div></div></article>
+          </div>
+          <div v-if="!filtered.length" class="h5-empty"><NEmpty description="暂无相关商品"/><n-button type="primary" round @click="browse()">查看全部好物</n-button></div>
+        </template>
+
+        <!-- Order list -->
+        <template v-else-if="page === 'orders'">
+          <div class="h5-subheading"><button type="button" class="h5-backlink" @click="navigate('profile')"><ArrowLeft :size="16"/> 我的</button><h1>我的订单</h1><p>记下每一次北海之旅的美好。</p></div>
+          <div v-if="!state.orders.length" class="h5-empty h5-orders-empty"><ShoppingBag :size="46"/><strong>还没有订单</strong><p>去发现北海的精彩好物吧</p><n-button type="primary" round @click="browse()">去逛逛 <ArrowRight :size="14"/></n-button></div>
+          <div v-else class="h5-order-list">
+            <article v-for="o in state.orders" :key="o.id" class="h5-card h5-order"><div class="h5-order-head"><span>订单号 {{o.id}}</span><n-tag size="small" type="success" round>{{o.status}}</n-tag></div><strong>{{o.product}}</strong><small>{{o.merchant}} · {{o.time}}</small><div class="h5-order-price">实付款 <b>¥{{fmt(o.amount)}}</b><span v-if="o.discount">优惠 ¥{{o.discount}}</span></div></article>
+          </div>
+        </template>
+
+        <!-- My account -->
+        <template v-else-if="page === 'profile'">
+          <div class="h5-profile-cover"><div class="h5-profile-avatar"><UserRound :size="31"/></div><div class="h5-profile-welcome"><strong>演示游客</strong><span><BadgeCheck :size="14"/> {{state.ticketVerified?'已激活票根权益':'普通游客 · 待核验'}}</span></div><Sparkles class="h5-profile-star" :size="33"/></div>
+          <div class="h5-profile-stats"><button type="button" @click="navigate('coupons')"><strong>{{state.claimedCoupons.length}}</strong><small>我的优惠券</small></button><button type="button" @click="navigate('orders')"><strong>{{state.orders.length}}</strong><small>我的订单</small></button><button type="button" @click="navigate('verify')"><strong>{{state.ticketVerified?'✓':'—'}}</strong><small>票根状态</small></button></div>
+          <div class="h5-card h5-profile-links"><h2>我的服务</h2><button type="button" @click="navigate('orders')"><span class="h5-menu-icon" style="background:#e9f1ff"><ShoppingBag :size="19" color="#297ff0"/></span>全部订单 <ChevronRight :size="17"/></button><button type="button" @click="navigate('coupons')"><span class="h5-menu-icon" style="background:#fff0e9"><Gift :size="19" color="#ef8a53"/></span>我的优惠券 <ChevronRight :size="17"/></button><button type="button" @click="navigate('verify')"><span class="h5-menu-icon" style="background:#e6f8f2"><Ticket :size="19" color="#1daf88"/></span>票根资格核验 <ChevronRight :size="17"/></button><a href="#/" class="h5-profile-link"><span class="h5-menu-icon" style="background:#f0edff"><Waves :size="19" color="#8268e8"/></span>返回展示首页 <ChevronRight :size="17"/></a></div>
+          <p class="h5-profile-disclaimer">北海城投票根生活 · UI 交互演示版本<br/>仅使用浏览器本地模拟数据，不接真实支付。</p>
+        </template>
+      </main>
+
+      <nav class="h5-tabbar" aria-label="游客端底部导航">
+        <button v-for="t in tabs" :key="t.id" type="button" :class="{active:activeTab===t.id}" @click="navigate(t.id)"><span class="h5-nav-icon"><component :is="t.icon" :size="21" :stroke-width="activeTab===t.id?2.4:1.9"/><i v-if="t.id==='coupons'&&state.claimedCoupons.length" class="h5-nav-badge"></i></span><small>{{t.label}}</small></button>
+      </nav>
+    </div>
+
+    <!-- Mobile checkout sheet -->
+    <div v-if="buying" class="h5-checkout-overlay" role="presentation" @click.self="closeBuy">
+      <section class="h5-checkout" role="dialog" aria-modal="true" aria-label="确认模拟订单">
+        <div class="h5-sheet-handle"></div>
+        <div class="h5-sheet-head"><h2>确认订单</h2><button type="button" aria-label="关闭订单" @click="closeBuy"><X :size="19"/></button></div>
+        <div class="h5-checkout-product"><img :src="buying.image" :alt="buying.name"/><div><strong>{{buying.name}}</strong><small>{{buying.merchant}}</small><b>¥{{fmt(buying.price)}}</b></div></div>
+        <div class="h5-checkout-label"><Gift :size="18"/> 票根专属优惠券</div>
+        <n-select v-model:value="selectedCoupon" :options="couponOptions" size="large"/>
+        <p class="h5-checkout-tip">核验票根并领取适用券后，可以在这里模拟抵扣。</p>
+        <div class="h5-checkout-total"><span>应付金额</span><strong><small>¥</small>{{fmt(finalPrice)}}</strong></div>
+        <n-button type="primary" size="large" block round @click="completeBuy"><CreditCard :size="17"/> 确认模拟支付</n-button>
+        <p class="h5-checkout-note">演示操作，不会发起真实支付或生成真实交易。</p>
       </section>
-      <div class="visitor-stats"><div><span>✦</span><strong>一张票根 · 更多精彩</strong><small>演出赛事票根权益</small></div><div><span>◎</span><strong>精选本地好物</strong><small>酒店、餐饮、文旅玩乐</small></div><div><span>◈</span><strong>安全便捷核销</strong><small>线上领券与模拟支付</small></div></div>
-      <section class="visitor-section"><div class="visitor-section-heading"><div><span>EXPLORE BEIHAI</span><h2>遇见北海好生活</h2><p>从海边日落到舌尖鲜味，找到你的下一站。</p></div><button @click="browse()">探索更多 <ArrowRight :size="17"/></button></div>
-        <div class="category-display"><button v-for="cat in categories" :key="cat.name" :class="'category-block '+cat.tone" @click="browse(cat.key)"><span>{{cat.emoji}}</span><strong>{{cat.name}}</strong><small>精选好礼等你来</small><ArrowUpRight :size="18"/></button></div>
-      </section>
-      <section class="visitor-section"><div class="visitor-section-heading"><div><span>CURATED FOR YOU</span><h2>北海精选推荐</h2><p>热爱不止在现场，好生活继续发生。</p></div><button @click="browse()">查看全部 <ArrowRight :size="17"/></button></div>
-        <div class="visitor-product-grid"><article v-for="p in filtered" :key="p.id" class="visitor-product" @click="openBuy(p)"><div class="product-photo"><img :src="p.image" :alt="p.name" loading="lazy"/><span>{{p.type}}精选</span></div><div class="product-info"><h3>{{p.name}}</h3><p><MapPin :size="13"/> {{p.distance}} <span class="product-rating"><Star :size="13" fill="currentColor"/> {{p.rating}}</span></p><div class="product-buy"><div><strong>¥{{p.price}}</strong><del>¥{{p.original}}</del></div><button>立即预订 <ArrowRight :size="15"/></button></div></div></article></div>
-      </section>
-      <div class="visitor-banner"><div><span class="eyebrow">TICKET BENEFITS</span><h2>凭票根，享北海专属优惠</h2><p>核验票根领取本地生活权益，为旅途带来更多惊喜。</p></div><n-button strong secondary round @click="tab='verify'">立即领取 <ArrowRight :size="16"/></n-button></div>
     </div>
-
-    <div v-else-if="tab==='verify'" class="visitor-container visitor-subpage">
-      <div class="breadcrumb">游客服务 <ChevronRight :size="14"/> 票根权益 <ChevronRight :size="14"/> <strong>资格核验</strong></div>
-      <div class="visitor-page-title"><div><span class="eyebrow">TICKET VERIFICATION</span><h1>一张票根，开启专属福利</h1><p>完成票根核验，领取北海专享优惠权益。</p></div><div class="page-illustration">🎟️</div></div>
-      <div class="verify-layout"><section class="visitor-white-card"><div class="section-card-head"><ScanLine :size="22"/><h2>票根资格核验</h2></div>
-        <div class="fake-ticket"><div><span>北海文旅 · 观演观赛通行证</span><strong>BEIHAI CITY PASS</strong><small>享城市消费好礼 · 票根权益体验</small></div><div class="fake-qr">▦</div></div>
-        <label class="visitor-label">票根编号</label><n-input v-model:value="ticketCode" size="large" placeholder="请输入票根编号"/>
-        <label class="visitor-label">持票人姓名</label><n-input v-model:value="ticketName" size="large" placeholder="请输入持票人姓名"/>
-        <p class="form-hint"><ShieldCheck :size="15"/> 演示编号 <b>BH2026</b>；不连接真实票务或实名接口。</p>
-        <div v-if="state.ticketVerified" class="verify-success"><CheckCircle2 :size="18"/> 已完成模拟核验</div>
-        <n-button type="primary" size="large" block round @click="verify">立即核验票根 <ArrowRight :size="17"/></n-button>
-      </section><aside class="visitor-white-card verify-tips"><div class="section-card-head"><Gift :size="22"/><h2>专享权益说明</h2></div><div class="tips-step" v-for="(text,i) in ['填写票根编号和持票人信息','模拟验证活动票根资格','领取优惠券并在下单时抵扣']" :key="text"><span>{{i+1}}</span><p>{{text}}</p></div><div class="tips-highlight"><Sparkles :size="20"/><strong>北海精彩，从此开始</strong><p>本页面不处理真实个人身份信息。</p></div></aside></div>
-    </div>
-
-    <div v-else-if="tab==='coupons'" class="visitor-container visitor-subpage">
-      <div class="breadcrumb">游客服务 <ChevronRight :size="14"/> <strong>优惠权益</strong></div>
-      <div class="visitor-page-title"><div><span class="eyebrow">MEMBER BENEFITS</span><h1>你的北海专属好礼</h1><p>领取票根专属优惠，轻松畅享本地生活。</p></div><div class="page-illustration">🎁</div></div>
-      <div v-if="!state.ticketVerified" class="verification-banner"><div><Ticket :size="22"/><span><strong>核验票根后即可领券</strong><small>使用演示票根编号 BH2026 完成操作</small></span></div><n-button type="primary" round @click="tab='verify'">前往核验 <ArrowRight :size="15"/></n-button></div>
-      <div class="coupons-grid"><article v-for="c in coupons" :key="c.id" class="benefit-card"><div class="benefit-top"><span>票根专属 · 限时好礼</span><Gift :size="18"/></div><div class="benefit-mid"><strong>¥{{c.amount}}</strong><span>满 ¥{{c.threshold}} 可用</span></div><h3>{{c.title}}</h3><p>适用分类：{{c.category}} · 部分精选商家</p><div class="benefit-bottom"><small>演示数据</small><n-button size="small" round :type="state.claimedCoupons.includes(c.id)?'default':'primary'" :disabled="state.claimedCoupons.includes(c.id)" @click="claim(c.id)">{{state.usedCoupons.includes(c.id)?'已使用':state.claimedCoupons.includes(c.id)?'已领取':'立即领取'}}</n-button></div></article></div>
-      <div class="visitor-white-card coupon-help"><Gift :size="25"/><div><strong>已领取 {{state.claimedCoupons.length}} 张优惠券</strong><p>前往「北海好物」，选择符合条件的商品即可模拟抵扣。</p></div><n-button secondary type="primary" round @click="browse()">去逛逛 <ArrowRight :size="14"/></n-button></div>
-    </div>
-
-    <div v-else-if="tab==='explore'" class="visitor-container visitor-subpage">
-      <div class="breadcrumb">游客服务 <ChevronRight :size="14"/> <strong>北海好物</strong></div>
-      <div class="visitor-page-title"><div><span class="eyebrow">BEIHAI LIFESTYLE</span><h1>发现值得体验的北海</h1><p>从海景旅宿到特色鲜味，精选本地好生活。</p></div><div class="page-illustration">🌴</div></div>
-      <div class="explore-filters"><div class="filter-chips"><button v-for="item in ['全部','住宿','美食','玩乐']" :key="item" :class="{on:category===item}" @click="category=item">{{item}}</button></div><n-input v-model:value="search" clearable placeholder="搜索商户或好物" style="max-width:290px"><template #prefix><Search :size="17"/></template></n-input></div>
-      <div class="visitor-product-grid"><article v-for="p in filtered" :key="p.id" class="visitor-product" @click="openBuy(p)"><div class="product-photo"><img :src="p.image" :alt="p.name"/><span>{{p.type}}精选</span></div><div class="product-info"><h3>{{p.name}}</h3><p><MapPin :size="13"/> {{p.distance}} <span class="product-rating"><Star :size="13" fill="currentColor"/> {{p.rating}}</span></p><div class="product-buy"><div><strong>¥{{p.price}}</strong><del>¥{{p.original}}</del></div><button>立即预订 <ArrowRight :size="15"/></button></div></div></article></div><n-empty v-if="!filtered.length" description="暂无相关商品" class="visitor-empty"/>
-    </div>
-
-    <div v-else-if="tab==='orders'" class="visitor-container visitor-subpage">
-      <div class="breadcrumb">个人中心 <ChevronRight :size="14"/> <strong>我的订单</strong></div><div class="visitor-page-title"><div><span class="eyebrow">MY BOOKINGS</span><h1>我的消费订单</h1><p>统一查看在北海的每一段美好体验。</p></div><div class="page-illustration">🛍️</div></div>
-      <div v-if="!state.orders.length" class="visitor-white-card visitor-empty"><n-empty description="还没有订单，去发现北海好生活吧"><template #extra><n-button type="primary" round @click="browse()">探索本地好物 <ArrowRight :size="15"/></n-button></template></n-empty></div>
-      <div v-else class="order-list"><article v-for="o in state.orders" :key="o.id" class="visitor-white-card visitor-order"><div class="order-top"><span>订单编号 {{o.id}}</span><n-tag type="success" round size="small">{{o.status}}</n-tag></div><h3>{{o.product}}</h3><p>{{o.merchant}} · {{o.time}}</p><div class="order-bottom"><span>模拟支付金额 <strong>¥{{fmt(o.amount)}}</strong></span><small v-if="o.discount">已抵扣 ¥{{o.discount}}</small></div></article></div>
-    </div>
-
-    <div v-else class="visitor-container visitor-subpage">
-      <div class="visitor-page-title"><div><span class="eyebrow">MY ACCOUNT</span><h1>我的北海旅程</h1><p>每一份票根，都值得被珍藏。</p></div><div class="page-illustration">👋</div></div>
-      <div class="visitor-profile"><div class="profile-portrait"><UserRound :size="33"/></div><div><h2>演示游客</h2><p>欢迎体验北海城投票根生活平台</p></div><n-tag :type="state.ticketVerified?'success':'warning'" round>{{state.ticketVerified?'已核验票根':'票根待核验'}}</n-tag></div>
-      <div class="profile-stats"><button @click="tab='coupons'"><strong>{{state.claimedCoupons.length}}</strong><span>优惠券</span></button><button @click="tab='orders'"><strong>{{state.orders.length}}</strong><span>我的订单</span></button><button @click="tab='verify'"><strong>{{state.ticketVerified?'✓':'—'}}</strong><span>核验状态</span></button></div>
-      <div class="visitor-white-card"><h3>快捷入口</h3><button class="profile-row" @click="tab='verify'"><ScanLine :size="20"/> 票根核验 <ChevronRight :size="18"/></button><button class="profile-row" @click="tab='coupons'"><Gift :size="20"/> 我的权益 <ChevronRight :size="18"/></button><button class="profile-row" @click="tab='orders'"><ShoppingBag :size="20"/> 我的订单 <ChevronRight :size="18"/></button></div>
-    </div>
-
-    <n-modal :show="!!buying" @update:show="v=>{if(!v)buying=null}" preset="card" title="确认模拟订单" style="max-width:490px" :bordered="false">
-      <template v-if="buying"><div class="purchase-product"><img :src="buying.image" :alt="buying.name"/><div><strong>{{buying.name}}</strong><p>{{buying.merchant}}</p><span>¥{{fmt(buying.price)}}</span></div></div>
-      <label class="visitor-label">使用票根优惠券</label><n-select v-model:value="couponChoice" :options="couponOptions" size="large"/><p class="muted">请先完成核验并领取符合条件的优惠券。</p>
-      <div class="purchase-total"><span>合计应付</span><strong>¥{{fmt(payable)}}</strong></div><n-button type="primary" size="large" block round @click="pay"><CreditCard :size="18"/> 确认模拟支付</n-button><p class="purchase-disclaimer">演示订单，不会发起真实支付。</p>
-      </template>
-    </n-modal>
   </div>
 </template>
