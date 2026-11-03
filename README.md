@@ -7,15 +7,15 @@
 
 ## 入口地址
 
-GitHub Pages 正式开启后：
+由 Cloudflare Pages 托管（GitHub `main` 分支自动部署）：
 
-- 平台入口：https://justwu.github.io/bhappdemo/
-- 游客端：https://justwu.github.io/bhappdemo/#/visitor
-- 运营管理后台：https://justwu.github.io/bhappdemo/#/backoffice
+- 平台入口：https://bhappdemo.pages.dev/
+- 游客端：https://bhappdemo.pages.dev/#/visitor
+- 运营管理后台：https://bhappdemo.pages.dev/#/backoffice
 
 兼容旧入口 `#/consumer`、`#/operations`、`#/admin`，会分别转到游客端或统一后台。
 
-**重要：站点访问须先在仓库 [Settings → Pages](https://github.com/justwu/bhappdemo/settings/pages) 中将 Build and deployment 的 Source 设置为 GitHub Actions。** 本仓库提供 `.github/workflows/deploy-pages.yml`，之后在 Actions 页重新运行该工作流，或向 main 提交新代码触发发布。
+**部署方式：** 仅使用 Cloudflare Pages，仓库不再包含 GitHub Actions 部署工作流。推送到 `main` 分支后，由 Cloudflare 自动完成构建与发布。
 
 ## 本地运行
 
@@ -33,7 +33,7 @@ npm run build
 npm run preview
 ```
 
-Cloudflare Pages 可直接连接 GitHub 仓库，构建命令 `npm run build`，输出目录 `dist`；项目 `vite.config.js` 使用相对资源路径，可兼容 GitHub Pages 项目子路径和 Cloudflare Pages 根路径。
+Cloudflare Pages 已连接 GitHub 仓库。构建命令 `npm run build`，输出目录 `dist`；项目 `vite.config.js` 使用相对资源路径。
 
 ## 演示说明
 
@@ -55,7 +55,5 @@ src/
   views/
     VisitorView.vue
     BackofficeView.vue
-.github/workflows/deploy-pages.yml
 ```
 
-Cloudflare Pages deployment: `main` branch auto-builds to `https://bhappdemo.pages.dev`.
