@@ -2,9 +2,9 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { NButton, NInput, NSelect, NTag, NEmpty, useMessage } from 'naive-ui'
 import {
-  ArrowLeft, ArrowRight, BadgeCheck, Bell, Check, CheckCircle2, ChevronRight,
+  ArrowLeft, ArrowRight, BadgeCheck, Bell, CalendarDays, Check, CheckCircle2, ChevronRight,
   ClipboardCheck, Compass, CreditCard, Gift, Heart, Home, MapPin,
-  Search, ShieldCheck, ShoppingBag, Sparkles, Star, Ticket,
+  Search, ShieldCheck, ShoppingBag, Sparkles, Star, Ticket, QrCode,
   UserRound, Wallet, Waves, X
 } from 'lucide-vue-next'
 import { state, products, verifyTicket, claimCoupon, purchase, fmt } from '../store.js'
@@ -19,6 +19,10 @@ const ticketName = ref('演示游客')
 const couponFilter = ref('available')
 const buying = ref(null)
 const selectedCoupon = ref('none')
+const carouselIndex = ref(0)
+const selectedActivity = ref(null)
+let rotationTimer = null
+let swipeStart = 0
 
 const tabs = [
   { id: 'home', label: '首页', icon: Home },
@@ -39,6 +43,14 @@ const categories = [
 ]
 const catalogue = computed(() => products.filter(p => state.merchants.some(m => m.name === p.merchant && m.status === '正常')))
 const featured = computed(() => catalogue.value.slice(0, 4))
+const activeCampaigns = computed(() => [...state.campaigns].filter(c=>c.status==='进行中').sort((a,b)=>(a.sort||99)-(b.sort||99)))
+const currentCampaign = computed(() => activeCampaigns.value[carouselIndex.value % Math.max(1,activeCampaigns.value.length)])
+const activityCoupons = computed(()=>state.coupons.filter(c=>c.campaignId===selectedActivity.value?.id&&c.status==='投放中'))
+function stepBanner(delta){ const total=activeCampaigns.value.length; if(total)carouselIndex.value=(carouselIndex.value+delta+total)%total }
+function openActivity(a){ if(a){selectedActivity.value=a;navigate('campaign')} }
+function myInstance(c){return state.couponInstances.find(i=>i.couponId===c.id)}
+function myCouponStatus(c){const i=myInstance(c);return i?.status==='已核销'?'已使用':i?'已领取':state.claimedCoupons.includes(c.id)?'已领取':'领取'}
+async function copyCode(code){try{await navigator.clipboard.writeText(code);message.success('核销码已复制')}catch(e){message.info('请长按核销码复制')}}
 const filtered = computed(() => catalogue.value.filter(p =>
   (filter.value === '全部' || p.type === filter.value) &&
   (!search.value.trim() || (p.name + p.merchant + p.distance).includes(search.value.trim()))
@@ -48,8 +60,7 @@ const shownCoupons = computed(() => couponFilter.value === 'mine'
   ? state.coupons.filter(c => state.claimedCoupons.includes(c.id))
   : liveCoupons.value)
 const applicable = computed(() => buying.value ? liveCoupons.value.filter(c =>
-  state.claimedCoupons.includes(c.id) &&
-  !state.usedCoupons.includes(c.id) &&
+  state.couponInstances.some(i=>i.couponId===c.id&&i.status==='未使用') &&
   c.category === buying.value.type &&
   buying.value.price >= c.threshold
 ) : [])
@@ -62,7 +73,7 @@ const finalPrice = computed(() => {
   const discount = applicable.value.find(c => c.id === selectedCoupon.value)?.amount || 0
   return Math.max(0, buying.value.price - discount)
 })
-const activeTab = computed(() => page.value === 'orders' ? 'profile' : page.value)
+const activeTab = computed(() => page.value === 'orders' ? 'profile' : page.value === 'campaign' ? 'home' : page.value)
 const ticketStatus = computed(() => state.ticketVerified ? '已完成资格核验' : '等待核验票根')
 
 function navigate(target) {
@@ -84,7 +95,7 @@ function runVerify() {
 }
 function runClaim(coupon) {
   const outcome = claimCoupon(coupon.id)
-  if (outcome.ok) message.success(outcome.message)
+  if (outcome.ok) { message.success(outcome.message); couponFilter.value='mine'; navigate('coupons') }
   else {
     message.warning(outcome.message)
     if (!state.ticketVerified) navigate('verify')
@@ -103,39 +114,42 @@ function completeBuy() {
 }
 function closeBuy() { buying.value = null }
 function onKeydown(e) { if (e.key === 'Escape' && buying.value) closeBuy() }
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onMounted(() => { window.addEventListener('keydown', onKeydown); rotationTimer=setInterval(()=>{ if(page.value==='home'&&activeCampaigns.value.length>1)stepBanner(1) },5500) })
+onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInterval(rotationTimer) })
 </script>
 
 <template>
   <div class="h5-stage">
     <div class="h5-device">
-      <div class="h5-topbar">
-        <div class="h5-location"><span class="h5-logo"><Waves :size="19" :stroke-width="2.6"/></span><div><strong>北海票根生活</strong><small><MapPin :size="11"/> 广西 · 北海</small></div></div>
-        <button class="h5-top-action" type="button" aria-label="查看我的订单" @click="navigate('orders')"><ShoppingBag :size="19"/><i v-if="state.orders.length" class="h5-bubble">{{state.orders.length}}</i></button>
-      </div>
-
       <main class="h5-main">
         <!-- Landing / Home -->
         <template v-if="page === 'home'">
-          <section class="h5-home-head">
-            <div class="h5-greeting"><span>HI, BEIHAI <span class="h5-sun">☀</span></span><strong>发现北海的每一份惊喜</strong></div>
-            <button class="h5-searchbox" type="button" @click="browse()"><Search :size="17"/><span>搜酒店、海鲜、美食、景区好物</span><span class="h5-search-go">搜索</span></button>
+          <section class="h5-resort-hero">
+            <img class="h5-resort-photo" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1100&q=86" alt="碧蓝海水与金沙海滩" fetchpriority="high"/>
+            <div class="h5-resort-shade"></div>
+            <div class="h5-resort-wordmark"><span><Waves :size="19"/> 北海假日</span><small>BEIHAI · CITY PASS</small></div>
+            <div class="h5-resort-title"><span class="h5-resort-sup"><Sparkles :size="15"/> 一张票根 · 全城好礼</span><h1>向海而行<br/><em>自在北海。</em></h1><p>把演出与旅途的好时光，兑换成城市生活的惊喜。</p><button type="button" @click="navigate('verify')">领取我的假日礼遇 <ArrowRight :size="17"/></button></div>
+            <div class="h5-resort-bottom"><span>漫游海岸 · 遇见美好</span><span>EXPLORE MORE ↓</span></div>
           </section>
-          <section class="h5-hero">
-            <img alt="蓝天海浪与海滩" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=950&q=84" fetchpriority="high"/>
-            <div class="h5-hero-mask"></div>
-            <div class="h5-hero-copy">
-              <span class="h5-hero-kicker"><Sparkles :size="12"/> 城市票根 · 北海礼遇</span>
-              <strong>一张票根<br/>玩转<span>浪漫北海</span></strong>
-              <p>看演出 · 逛银滩 · 吃海鲜</p>
-              <button type="button" @click="navigate('verify')">解锁专属权益 <ArrowRight :size="14"/></button>
-            </div>
-            <div class="h5-hero-dot"><i></i><i></i><i></i></div>
+          <section class="h5-discovery">
+            <div class="h5-discovery-intro"><div><small>HELLO, BEIHAI</small><h2>慢下来，去海边。</h2></div><span>☀️</span></div>
+            <button class="h5-discovery-search" type="button" @click="browse()"><Search :size="19"/><span>想去哪里？搜酒店、海鲜、景区…</span><span>探索 <ArrowRight :size="15"/></span></button>
           </section>
-
           <div class="h5-ticker"><span class="h5-ticker-symbol"><Bell :size="14"/></span><b>北海优选</b><span>参与活动，即享专属票根消费好礼</span><ChevronRight :size="14"/></div>
 
+          <section class="h5-campaign-zone">
+            <div class="h5-editorial-title"><div><small>WHAT'S HAPPENING</small><h2>这个假日，<em>精彩正在发生</em></h2><p>北海演出 · 城市文旅 · 赛事票根专享</p></div><span>城市活动</span></div>
+            <div v-if="currentCampaign" class="h5-campaign-carousel" @touchstart.passive="swipeStart=$event.changedTouches[0].screenX" @touchend.passive="Math.abs($event.changedTouches[0].screenX-swipeStart)>45&&stepBanner($event.changedTouches[0].screenX<swipeStart?1:-1)">
+              <article class="h5-campaign-slide" :class="'h5-theme-'+(currentCampaign.theme||'ocean')" @click="openActivity(currentCampaign)">
+                <img :src="currentCampaign.image" :alt="currentCampaign.title" loading="lazy"/>
+                <div class="h5-campaign-slide-shade"></div>
+                <div class="h5-campaign-slide-body"><span class="h5-activity-label"><Sparkles :size="14"/> {{currentCampaign.badge||currentCampaign.tag}}</span><strong>{{currentCampaign.title}}</strong><p>{{currentCampaign.subtitle||'北海城市好礼，等你来发现'}}</p><span class="h5-campaign-pill">凭本地票根领券 <ArrowRight :size="16"/></span></div>
+                <div class="h5-campaign-date">{{currentCampaign.date}}</div>
+              </article>
+              <div class="h5-carousel-controls"><div class="h5-carousel-dots"><button v-for="(a,i) in activeCampaigns" :key="a.id" type="button" :aria-label="'查看'+a.title" :class="{active:i===carouselIndex%activeCampaigns.length}" @click="carouselIndex=i"></button></div><div class="h5-carousel-arrows"><button type="button" aria-label="上一活动" @click="stepBanner(-1)">‹</button><button type="button" aria-label="下一活动" @click="stepBanner(1)">›</button></div></div>
+            </div>
+            <div class="h5-campaign-secondary"><button v-for="a in activeCampaigns.filter(x=>x.id!==currentCampaign?.id).slice(0,2)" :key="a.id" type="button" @click="openActivity(a)"><span class="h5-campaign-secondary-img"><img :src="a.image" :alt="a.title" loading="lazy"/></span><span><small>{{a.tag}}</small><strong>{{a.title}}</strong><span>查看活动 <ChevronRight :size="13"/></span></span></button></div>
+          </section>
           <section class="h5-category-panel">
             <button v-for="item in categories" :key="item.label" class="h5-category" @click="browse(item.type)">
               <span class="h5-category-icon" :style="{ background: item.color }">{{item.emoji}}</span>
@@ -143,7 +157,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </button>
           </section>
 
-          <section class="h5-ticket-promo" @click="navigate('verify')">
+          <section class="h5-ticket-promo" @click="navigate(state.ticketVerified?'coupons':'verify')">
             <div class="h5-ticket-promo-left"><span><Ticket :size="14"/> 票根专属权益</span><strong>{{state.ticketVerified ? '你的票根已激活' : '带上票根，领取北海好礼'}}</strong><small>{{state.ticketVerified ? '专属消费券等你领取' : '一键核验，解锁酒店、美食专属优惠'}}</small><button type="button">{{state.ticketVerified ? '去领优惠' : '立即核验'}} <ChevronRight :size="13"/></button></div>
             <span class="h5-ticket-art">🎟️</span>
           </section>
@@ -153,7 +167,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <div class="h5-coupon-scroll">
               <article v-for="c in liveCoupons" :key="c.id" class="h5-coupon-mini">
                 <div><small>¥</small><strong>{{c.amount}}</strong><span>满 {{c.threshold}} 可用</span></div>
-                <div class="h5-coupon-mini-right"><strong>{{c.title}}</strong><small>{{c.category}}好礼 · 票根专享</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{state.usedCoupons.includes(c.id)?'已用':state.claimedCoupons.includes(c.id)?'已领':'领取'}}</button></div>
+                <div class="h5-coupon-mini-right"><strong>{{c.title}}</strong><small>{{c.category}}好礼 · 票根专享</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{myCouponStatus(c)}}</button></div>
               </article>
             </div>
           </section>
@@ -168,6 +182,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
           </section>
           <div class="h5-bottom-hint">北海城投票根经济 · 让城市生活更精彩</div>
+        </template>
+
+        <!-- Immersive campaign details -->
+        <template v-else-if="page === 'campaign'">
+          <div class="h5-campaign-details" v-if="selectedActivity">
+            <div class="h5-campaign-detail-cover"><img :src="selectedActivity.image" :alt="selectedActivity.title"/><div class="h5-campaign-detail-gradient"></div><button class="h5-campaign-back" type="button" @click="navigate('home')"><ArrowLeft :size="19"/> 返回活动</button><span class="h5-campaign-detail-kicker">BEIHAI · HOLIDAY STORIES</span><h1>{{selectedActivity.title}}</h1></div>
+            <div class="h5-campaign-detail-info"><div class="h5-detail-badge"><Ticket :size="15"/> {{selectedActivity.tag}} · {{selectedActivity.badge}}</div><h2>每一张北海票根，<br/>都是开启假日的邀请函。</h2><p>{{selectedActivity.subtitle}}</p><div class="h5-activity-valid"><span><CalendarDays :size="15"/> {{selectedActivity.date}}</span><span><MapPin :size="15"/> 广西北海 · 合作消费商户</span></div></div>
+            <section class="h5-activity-rewards"><div class="h5-editorial-title"><div><small>YOUR EXCLUSIVE BENEFITS</small><h2>活动专属礼遇</h2></div></div><p class="h5-activity-rewards-hint">先核验北海本地演出、赛事或文旅票根，领取后在线下门店出示券码核销。</p>
+              <div v-if="activityCoupons.length" class="h5-coupon-list"><article v-for="c in activityCoupons" :key="c.id" class="h5-voucher"><div class="h5-voucher-value"><span><em>¥</em>{{c.amount}}</span><small>满 {{c.threshold}} 可用</small></div><div class="h5-voucher-detail"><span>本地票根福利</span><strong>{{c.title}}</strong><small>有效期至 {{c.expiresAt||'2026-12-31'}}</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{myCouponStatus(c)==='领取'?'立即兑换':myCouponStatus(c)}}</button></div></article></div>
+              <div v-else class="h5-empty">活动权益配置中，请先前往领券中心查看其他优惠。</div>
+            </section>
+            <div class="h5-campaign-action"><button @click="navigate(state.ticketVerified?'coupons':'verify')">{{state.ticketVerified?'查看我的消费券':'核验票根，开启权益'}} <ArrowRight :size="17"/></button></div>
+          </div>
         </template>
 
         <!-- Ticket verification -->
@@ -186,10 +213,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div v-if="!state.ticketVerified" class="h5-notice-action"><div><Ticket :size="18"/><span>领取前请先核验票根</span></div><button type="button" @click="navigate('verify')">立即去核验 <ArrowRight :size="13"/></button></div>
           <div class="h5-coupon-tabs"><button type="button" :class="{active:couponFilter==='available'}" @click="couponFilter='available'">可领取</button><button type="button" :class="{active:couponFilter==='mine'}" @click="couponFilter='mine'">我的卡券 <span>{{state.claimedCoupons.length}}</span></button></div>
           <div v-if="shownCoupons.length" class="h5-coupon-list">
-            <article v-for="c in shownCoupons" :key="c.id" class="h5-voucher"><div class="h5-voucher-value"><span><em>¥</em>{{c.amount}}</span><small>满 {{c.threshold}} 可用</small></div><div class="h5-voucher-detail"><span>票根权益 · 北海精选</span><strong>{{c.title}}</strong><small>适用于{{c.category}}类精选商品</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{state.usedCoupons.includes(c.id)?'已使用':state.claimedCoupons.includes(c.id)?'已领取':'立即领取'}}</button></div></article>
+            <article v-for="c in shownCoupons" :key="c.id" class="h5-voucher"><div class="h5-voucher-value"><span><em>¥</em>{{c.amount}}</span><small>满 {{c.threshold}} 可用</small></div><div class="h5-voucher-detail"><span>票根权益 · 北海精选</span><strong>{{c.title}}</strong><small>适用于{{c.category}}类线下合作商户</small><div v-if="couponFilter==='mine'&&myInstance(c)" class="h5-redeem-code">
+                    <small>{{myInstance(c).status==='已核销'?'已完成核销 · '+(myInstance(c).merchantName||'线上演示'):'到线下合作门店出示此券码'}}</small>
+                    <button type="button" :disabled="myInstance(c).status==='已核销'" @click="copyCode(myInstance(c).code)"><QrCode :size="15"/> {{myInstance(c).code}} <span>{{myInstance(c).status==='已核销'?'已使用':'复制'}}</span></button>
+                    <small>有效期至 {{myInstance(c).expiresAt}} · {{c.category}}适用门店</small>
+                  </div><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{myCouponStatus(c)==='领取'?'立即兑换':myCouponStatus(c)}}</button></div></article>
           </div>
           <div v-else class="h5-empty"><NEmpty description="还没有领取卡券"/><n-button type="primary" round @click="couponFilter='available'">去领取</n-button></div>
-          <div class="h5-coupon-footnote">温馨提示：核验、领券、支付均为模拟体验，实际优惠以正式平台规则为准。</div>
+          <div class="h5-coupon-footnote">温馨提示：本页为演示数据。线下验券仅可在同浏览器环境的运营后台模拟，不同设备之间暂不互通。</div>
         </template>
 
         <!-- Shopping -->
