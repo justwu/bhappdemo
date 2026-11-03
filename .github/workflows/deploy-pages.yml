@@ -1,4 +1,4 @@
-name: Deploy Beihai demo to GitHub Pages
+name: Build and deploy Vue 3 demo to GitHub Pages
 
 on:
   push:
@@ -15,22 +15,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build Vue 3 demo
+        run: npm run build
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Upload static demo
+      - name: Upload dist
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
-      - name: Deploy GitHub Pages
+          path: ./dist
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
