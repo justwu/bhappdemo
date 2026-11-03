@@ -1,13 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { NButton, NInput, NSelect, NTag, NEmpty, useMessage } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NSelect, NTag, NEmpty, useMessage } from 'naive-ui'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Bell, CalendarDays, Check, CheckCircle2, ChevronRight,
   ClipboardCheck, Compass, CreditCard, Gift, Heart, Home, MapPin,
   Search, ShieldCheck, ShoppingBag, Sparkles, Star, Ticket, QrCode,
-  UserRound, Wallet, Waves, X
+  UserRound, Wallet, Waves, X, Banknote
 } from 'lucide-vue-next'
-import { state, products, verifyTicket, claimCoupon, purchase, fmt } from '../store.js'
+import { state, products, verifyTicket, claimCoupon, purchase, createOfflinePayment, fmt } from '../store.js'
 import '../h5.css'
 
 const message = useMessage()
@@ -19,6 +19,11 @@ const ticketName = ref('演示游客')
 const couponFilter = ref('available')
 const buying = ref(null)
 const selectedCoupon = ref('none')
+const offlineMerchant = ref('M002')
+const offlineAmount = ref(168)
+const offlineCode = ref('')
+const offlinePaymentMethod = ref('微信支付')
+const offlineResult = ref(null)
 const carouselIndex = ref(0)
 const selectedActivity = ref(null)
 let rotationTimer = null
@@ -64,6 +69,10 @@ const applicable = computed(() => buying.value ? liveCoupons.value.filter(c =>
   c.category === buying.value.type &&
   buying.value.price >= c.threshold
 ) : [])
+const offlineMerchants = computed(()=>state.merchants.filter(m=>m.status==='正常').map(m=>({label:m.name,value:m.id})))
+const offlinePreview = computed(()=>state.couponInstances.find(i=>i.code===offlineCode.value.trim().toUpperCase()))
+const offlineCoupon = computed(()=>state.coupons.find(c=>c.id===offlinePreview.value?.couponId))
+const offlinePayable = computed(()=>{const amount=Number(offlineAmount.value)||0;const m=state.merchants.find(x=>x.id===offlineMerchant.value);const cat={住宿:'酒店住宿',美食:'特色餐饮',玩乐:'景区玩乐'}[offlineCoupon.value?.category];return Math.max(0,amount-(offlinePreview.value?.status==='未使用'&&offlineCoupon.value?.status==='投放中'&&m?.category===cat&&amount>=offlineCoupon.value.threshold?offlineCoupon.value.amount:0))})
 const couponOptions = computed(() => [
   { label: '不使用优惠券', value: 'none' },
   ...applicable.value.map(c => ({ label: c.title + ' · 立减 ¥' + c.amount, value: c.id }))
@@ -73,7 +82,7 @@ const finalPrice = computed(() => {
   const discount = applicable.value.find(c => c.id === selectedCoupon.value)?.amount || 0
   return Math.max(0, buying.value.price - discount)
 })
-const activeTab = computed(() => page.value === 'orders' ? 'profile' : page.value === 'campaign' ? 'home' : page.value)
+const activeTab = computed(() => page.value === 'orders' ? 'profile' : ['campaign','offline'].includes(page.value) ? 'home' : page.value)
 const ticketStatus = computed(() => state.ticketVerified ? '已完成资格核验' : '等待核验票根')
 
 function navigate(target) {
@@ -113,6 +122,8 @@ function completeBuy() {
   navigate('orders')
 }
 function closeBuy() { buying.value = null }
+function goOffline(code='') { offlineResult.value=null;offlineCode.value=code;navigate('offline') }
+function completeOffline() {const result=createOfflinePayment({merchantId:offlineMerchant.value,originalAmount:offlineAmount.value,couponCode:offlineCode.value,paymentMethod:offlinePaymentMethod.value});if(result.ok){offlineResult.value=result.transaction;message.success(result.message)}else message.warning(result.message)}
 function onKeydown(e) { if (e.key === 'Escape' && buying.value) closeBuy() }
 onMounted(() => { window.addEventListener('keydown', onKeydown); rotationTimer=setInterval(()=>{ if(page.value==='home'&&activeCampaigns.value.length>1)stepBanner(1) },5500) })
 onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInterval(rotationTimer) })
@@ -157,6 +168,10 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInter
             </button>
           </section>
 
+          <section class="h5-service-duo">
+            <button type="button" @click="goOffline()"><span class="h5-service-symbol">💳</span><strong>到店优惠买单</strong><small>出示票根券 · 线下消费抵扣</small><span>去买单 <ArrowRight :size="15"/></span></button>
+            <button type="button" @click="navigate('coupons')"><span class="h5-service-symbol">🎫</span><strong>我的城市消费券</strong><small>领券后到线下合作门店使用</small><span>查看卡券 <ArrowRight :size="15"/></span></button>
+          </section>
           <section class="h5-ticket-promo" @click="navigate(state.ticketVerified?'coupons':'verify')">
             <div class="h5-ticket-promo-left"><span><Ticket :size="14"/> 票根专属权益</span><strong>{{state.ticketVerified ? '你的票根已激活' : '带上票根，领取北海好礼'}}</strong><small>{{state.ticketVerified ? '专属消费券等你领取' : '一键核验，解锁酒店、美食专属优惠'}}</small><button type="button">{{state.ticketVerified ? '去领优惠' : '立即核验'}} <ChevronRight :size="13"/></button></div>
             <span class="h5-ticket-art">🎟️</span>
@@ -215,7 +230,7 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInter
           <div v-if="shownCoupons.length" class="h5-coupon-list">
             <article v-for="c in shownCoupons" :key="c.id" class="h5-voucher"><div class="h5-voucher-value"><span><em>¥</em>{{c.amount}}</span><small>满 {{c.threshold}} 可用</small></div><div class="h5-voucher-detail"><span>票根权益 · 北海精选</span><strong>{{c.title}}</strong><small>适用于{{c.category}}类线下合作商户</small><div v-if="couponFilter==='mine'&&myInstance(c)" class="h5-redeem-code">
                     <small>{{myInstance(c).status==='已核销'?'已完成核销 · '+(myInstance(c).merchantName||'线上演示'):'到线下合作门店出示此券码'}}</small>
-                    <button type="button" :disabled="myInstance(c).status==='已核销'" @click="copyCode(myInstance(c).code)"><QrCode :size="15"/> {{myInstance(c).code}} <span>{{myInstance(c).status==='已核销'?'已使用':'复制'}}</span></button>
+                    <button type="button" :disabled="myInstance(c).status==='已核销'" @click="copyCode(myInstance(c).code)"><QrCode :size="15"/> {{myInstance(c).code}} <span>{{myInstance(c).status==='已核销'?'已使用':'复制'}}</span></button><button v-if="myInstance(c).status==='未使用'" type="button" class="h5-voucher-go-pay" @click="goOffline(myInstance(c).code)">去线下买单 <ArrowRight :size="14"/></button>
                     <small>有效期至 {{myInstance(c).expiresAt}} · {{c.category}}适用门店</small>
                   </div><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{myCouponStatus(c)==='领取'?'立即兑换':myCouponStatus(c)}}</button></div></article>
           </div>
@@ -235,11 +250,28 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInter
           <div v-if="!filtered.length" class="h5-empty"><NEmpty description="暂无相关商品"/><n-button type="primary" round @click="browse()">查看全部好物</n-button></div>
         </template>
 
+        <!-- On-site merchant checkout -->
+        <template v-else-if="page === 'offline'">
+          <div class="h5-offline-cover"><button type="button" @click="navigate('home')"><ArrowLeft :size="18"/> 返回</button><span>BEIHAI · IN-STORE PAYMENT</span><h1>到店买单，<br/>消费更有礼。</h1><p>凭北海活动票根兑券，到店消费直接抵扣。</p></div>
+          <div v-if="offlineResult" class="h5-card h5-offline-success"><CheckCircle2 :size="53"/><h2>模拟支付成功</h2><p>本次为本地演示，未产生真实资金交易</p><strong>¥{{fmt(offlineResult.amount)}}</strong><div>商户：{{offlineResult.merchantName}}</div><div>支付方式：{{offlineResult.paymentMethod}}</div><div>抵扣优惠：¥{{fmt(offlineResult.discount)}}</div><div>交易编号：{{offlineResult.id}}</div><n-button type="primary" block round size="large" @click="navigate('orders')">查看交易记录</n-button><button type="button" @click="goOffline()">再模拟一笔</button></div>
+          <section v-else class="h5-card h5-offline-form">
+            <h2><Wallet :size="20"/> 线下到店支付</h2>
+            <label>消费门店</label><n-select v-model:value="offlineMerchant" :options="offlineMerchants" size="large"/>
+            <label>实际消费金额（元）</label><n-input-number v-model:value="offlineAmount" :min="0.01" :max="999999" :precision="2" size="large" placeholder="请输入门店消费金额" style="width:100%"/>
+            <label>票根消费券核销码（选填）</label><n-input v-model:value="offlineCode" size="large" placeholder="从我的卡券复制 BH 开头核销码"/>
+            <div v-if="offlinePreview" class="h5-offline-coupon"><Gift :size="18"/><span>{{offlineCoupon?.title||'未知券种'}}<small>{{offlinePreview.status}} · 满 {{offlineCoupon?.threshold}} 元可用</small></span></div>
+            <label>支付方式（演示）</label><div class="h5-pay-methods"><button v-for="m in ['微信支付','支付宝','现金','银行卡']" :key="m" type="button" :class="{selected:offlinePaymentMethod===m}" @click="offlinePaymentMethod=m">{{m}}</button></div>
+            <div class="h5-offline-calculation"><div><span>消费金额</span><strong>¥{{fmt(Number(offlineAmount)||0)}}</strong></div><div><span>票根优惠</span><strong class="discount">-¥{{fmt(Math.max(0,(Number(offlineAmount)||0)-offlinePayable))}}</strong></div><div><b>模拟应付</b><strong class="payable">¥{{fmt(offlinePayable)}}</strong></div></div>
+            <n-button type="primary" size="large" round block @click="completeOffline"><CreditCard :size="18"/> 确认线下模拟支付</n-button>
+            <p class="h5-offline-tip">仅模拟微信/支付宝等付款结果及优惠券核销，不会调起真实支付。商户收银、券验真及资金清算须使用正式后台服务。</p>
+          </section>
+        </template>
+
         <!-- Order list -->
         <template v-else-if="page === 'orders'">
           <div class="h5-subheading"><button type="button" class="h5-backlink" @click="navigate('profile')"><ArrowLeft :size="16"/> 我的</button><h1>我的订单</h1><p>记下每一次北海之旅的美好。</p></div>
-          <div v-if="!state.orders.length" class="h5-empty h5-orders-empty"><ShoppingBag :size="46"/><strong>还没有订单</strong><p>去发现北海的精彩好物吧</p><n-button type="primary" round @click="browse()">去逛逛 <ArrowRight :size="14"/></n-button></div>
-          <div v-else class="h5-order-list">
+          <div v-if="!state.orders.length&&!state.offlineTransactions.length" class="h5-empty h5-orders-empty"><ShoppingBag :size="46"/><strong>还没有订单</strong><p>去发现北海的精彩好物吧</p><n-button type="primary" round @click="browse()">去逛逛 <ArrowRight :size="14"/></n-button></div>
+          <div v-else class="h5-order-list"><article v-for="p in state.offlineTransactions" :key="p.id" class="h5-card h5-order"><div class="h5-order-head"><span>线下交易 {{p.id}}</span><n-tag size="small" type="success" round>{{p.status}}</n-tag></div><strong>{{p.merchantName}} · 到店消费</strong><small>{{p.paymentMethod}} · {{p.time}}</small><div class="h5-order-price">实付款 <b>¥{{fmt(p.amount)}}</b><span v-if="p.discount">票根优惠 ¥{{fmt(p.discount)}}</span></div></article>
             <article v-for="o in state.orders" :key="o.id" class="h5-card h5-order"><div class="h5-order-head"><span>订单号 {{o.id}}</span><n-tag size="small" type="success" round>{{o.status}}</n-tag></div><strong>{{o.product}}</strong><small>{{o.merchant}} · {{o.time}}</small><div class="h5-order-price">实付款 <b>¥{{fmt(o.amount)}}</b><span v-if="o.discount">优惠 ¥{{o.discount}}</span></div></article>
           </div>
         </template>
@@ -247,8 +279,8 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInter
         <!-- My account -->
         <template v-else-if="page === 'profile'">
           <div class="h5-profile-cover"><div class="h5-profile-avatar"><UserRound :size="31"/></div><div class="h5-profile-welcome"><strong>演示游客</strong><span><BadgeCheck :size="14"/> {{state.ticketVerified?'已激活票根权益':'普通游客 · 待核验'}}</span></div><Sparkles class="h5-profile-star" :size="33"/></div>
-          <div class="h5-profile-stats"><button type="button" @click="navigate('coupons')"><strong>{{state.claimedCoupons.length}}</strong><small>我的优惠券</small></button><button type="button" @click="navigate('orders')"><strong>{{state.orders.length}}</strong><small>我的订单</small></button><button type="button" @click="navigate('verify')"><strong>{{state.ticketVerified?'✓':'—'}}</strong><small>票根状态</small></button></div>
-          <div class="h5-card h5-profile-links"><h2>我的服务</h2><button type="button" @click="navigate('orders')"><span class="h5-menu-icon" style="background:#e9f1ff"><ShoppingBag :size="19" color="#297ff0"/></span>全部订单 <ChevronRight :size="17"/></button><button type="button" @click="navigate('coupons')"><span class="h5-menu-icon" style="background:#fff0e9"><Gift :size="19" color="#ef8a53"/></span>我的优惠券 <ChevronRight :size="17"/></button><button type="button" @click="navigate('verify')"><span class="h5-menu-icon" style="background:#e6f8f2"><Ticket :size="19" color="#1daf88"/></span>票根资格核验 <ChevronRight :size="17"/></button><a href="#/" class="h5-profile-link"><span class="h5-menu-icon" style="background:#f0edff"><Waves :size="19" color="#8268e8"/></span>返回展示首页 <ChevronRight :size="17"/></a></div>
+          <div class="h5-profile-stats"><button type="button" @click="navigate('coupons')"><strong>{{state.claimedCoupons.length}}</strong><small>我的优惠券</small></button><button type="button" @click="navigate('orders')"><strong>{{state.orders.length+state.offlineTransactions.length}}</strong><small>我的订单</small></button><button type="button" @click="navigate('verify')"><strong>{{state.ticketVerified?'✓':'—'}}</strong><small>票根状态</small></button></div>
+          <div class="h5-card h5-profile-links"><h2>我的服务</h2><button type="button" @click="goOffline()"><span class="h5-menu-icon" style="background:#e6f6f1"><CreditCard :size="19" color="#178c81"/></span>到店优惠买单 <ChevronRight :size="17"/></button><button type="button" @click="navigate('orders')"><span class="h5-menu-icon" style="background:#e9f1ff"><ShoppingBag :size="19" color="#297ff0"/></span>全部订单 <ChevronRight :size="17"/></button><button type="button" @click="navigate('coupons')"><span class="h5-menu-icon" style="background:#fff0e9"><Gift :size="19" color="#ef8a53"/></span>我的优惠券 <ChevronRight :size="17"/></button><button type="button" @click="navigate('verify')"><span class="h5-menu-icon" style="background:#e6f8f2"><Ticket :size="19" color="#1daf88"/></span>票根资格核验 <ChevronRight :size="17"/></button><a href="#/" class="h5-profile-link"><span class="h5-menu-icon" style="background:#f0edff"><Waves :size="19" color="#8268e8"/></span>返回展示首页 <ChevronRight :size="17"/></a></div>
           <p class="h5-profile-disclaimer">北海城投票根生活 · UI 交互演示版本<br/>仅使用浏览器本地模拟数据，不接真实支付。</p>
         </template>
       </main>
