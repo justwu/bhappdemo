@@ -5,7 +5,7 @@ import {
   ArrowLeft, ArrowRight, BadgeCheck, Bell, CalendarDays, Check, CheckCircle2, ChevronRight,
   ClipboardCheck, Compass, CreditCard, Gift, Heart, Home, MapPin,
   Search, ShieldCheck, ShoppingBag, Sparkles, Star, Ticket, QrCode,
-  UserRound, Wallet, Waves, X, Banknote
+  UserRound, Wallet, Waves, X, Banknote, House, ArrowUpRight
 } from 'lucide-vue-next'
 import { state, products, verifyTicket, claimCoupon, purchase, createOfflinePayment, fmt } from '../store.js'
 import '../h5.css'
@@ -26,6 +26,7 @@ const offlinePaymentMethod = ref('微信支付')
 const offlineResult = ref(null)
 const carouselIndex = ref(0)
 const selectedActivity = ref(null)
+const selectedProduct = ref(null)
 let rotationTimer = null
 let swipeStart = 0
 
@@ -47,12 +48,14 @@ const categories = [
   { label: '全部服务', emoji: '✨', type: '全部', color: '#e7f7f8' }
 ]
 const catalogue = computed(() => products.filter(p => state.merchants.some(m => m.name === p.merchant && m.status === '正常')))
-const featured = computed(() => catalogue.value.slice(0, 4))
+const featured = computed(() => catalogue.value.slice(0, 8))
 const activeCampaigns = computed(() => [...state.campaigns].filter(c=>c.status==='进行中').sort((a,b)=>(a.sort||99)-(b.sort||99)))
 const currentCampaign = computed(() => activeCampaigns.value[carouselIndex.value % Math.max(1,activeCampaigns.value.length)])
 const activityCoupons = computed(()=>state.coupons.filter(c=>c.campaignId===selectedActivity.value?.id&&c.status==='投放中'))
 function stepBanner(delta){ const total=activeCampaigns.value.length; if(total)carouselIndex.value=(carouselIndex.value+delta+total)%total }
 function openActivity(a){ if(a){selectedActivity.value=a;navigate('campaign')} }
+function openProduct(p){if(p){selectedProduct.value=p;navigate('product')}}
+const otherCampaigns = computed(()=>activeCampaigns.value.filter(a=>a.id!==currentCampaign.value?.id).slice(0,2))
 function myInstance(c){return state.couponInstances.find(i=>i.couponId===c.id)}
 function myCouponStatus(c){const i=myInstance(c);return i?.status==='已核销'?'已使用':i?'已领取':state.claimedCoupons.includes(c.id)?'已领取':'领取'}
 async function copyCode(code){try{await navigator.clipboard.writeText(code);message.success('核销码已复制')}catch(e){message.info('请长按核销码复制')}}
@@ -82,7 +85,7 @@ const finalPrice = computed(() => {
   const discount = applicable.value.find(c => c.id === selectedCoupon.value)?.amount || 0
   return Math.max(0, buying.value.price - discount)
 })
-const activeTab = computed(() => page.value === 'orders' ? 'profile' : ['campaign','offline'].includes(page.value) ? 'home' : page.value)
+const activeTab = computed(() => page.value === 'orders' ? 'profile' : ['campaign','activities','offline'].includes(page.value) ? 'home' : page.value==='product'?'explore':page.value)
 const ticketStatus = computed(() => state.ticketVerified ? '已完成资格核验' : '等待核验票根')
 
 function navigate(target) {
@@ -133,73 +136,116 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); clearInter
   <div class="h5-stage">
     <div class="h5-device">
       <main class="h5-main">
-        <!-- Landing / Home -->
+        <!-- Curated visitor home: campaign carousel → services → editorial → discoveries -->
         <template v-if="page === 'home'">
-          <section class="h5-resort-hero">
-            <img class="h5-resort-photo" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1100&q=86" alt="碧蓝海水与金沙海滩" fetchpriority="high"/>
-            <div class="h5-resort-shade"></div>
-            <div class="h5-resort-wordmark"><span><Waves :size="19"/> 北海假日</span><small>BEIHAI · CITY PASS</small></div>
-            <div class="h5-resort-title"><span class="h5-resort-sup"><Sparkles :size="15"/> 一张票根 · 全城好礼</span><h1>向海而行<br/><em>自在北海。</em></h1><p>把演出与旅途的好时光，兑换成城市生活的惊喜。</p><button type="button" @click="navigate('verify')">领取我的假日礼遇 <ArrowRight :size="17"/></button></div>
-            <div class="h5-resort-bottom"><span>漫游海岸 · 遇见美好</span><span>EXPLORE MORE ↓</span></div>
-          </section>
-          <section class="h5-discovery">
-            <div class="h5-discovery-intro"><div><small>HELLO, BEIHAI</small><h2>慢下来，去海边。</h2></div><span>☀️</span></div>
-            <button class="h5-discovery-search" type="button" @click="browse()"><Search :size="19"/><span>想去哪里？搜酒店、海鲜、景区…</span><span>探索 <ArrowRight :size="15"/></span></button>
-          </section>
-          <div class="h5-ticker"><span class="h5-ticker-symbol"><Bell :size="14"/></span><b>北海优选</b><span>参与活动，即享专属票根消费好礼</span><ChevronRight :size="14"/></div>
+          <div class="h5-minimal-home">
+            <section class="h5-focus-carousel" aria-label="本期精选城市活动"
+              @touchstart.passive="swipeStart=$event.changedTouches[0].screenX"
+              @touchend.passive="Math.abs($event.changedTouches[0].screenX-swipeStart)>45&&stepBanner($event.changedTouches[0].screenX<swipeStart?1:-1)">
+              <template v-if="currentCampaign">
+                <div class="h5-focus-image" :key="currentCampaign.id">
+                  <img :src="currentCampaign.image" :alt="currentCampaign.title" fetchpriority="high"/>
+                  <div class="h5-focus-wash"></div>
+                </div>
+                <div class="h5-focus-brand"><Waves :size="19" :stroke-width="2.6"/> <span>北海假日</span><small>BEIHAI PASS</small></div>
+                <div class="h5-focus-copy">
+                  <span class="h5-focus-kicker">{{currentCampaign.badge || '城市好礼'}} · {{currentCampaign.tag}}</span>
+                  <h1>{{currentCampaign.title}}</h1>
+                  <p>{{currentCampaign.subtitle || '在北海，发现旅途更多美好。'}}</p>
+                  <button type="button" class="h5-focus-cta" @click="openActivity(currentCampaign)">探索活动 <ArrowRight :size="17"/></button>
+                </div>
+                <div class="h5-focus-pager">
+                  <span class="h5-focus-count">0{{(carouselIndex % activeCampaigns.length) + 1}} <i>/</i> 0{{activeCampaigns.length}}</span>
+                  <div class="h5-focus-dots">
+                    <button v-for="(a,i) in activeCampaigns" :key="a.id" type="button" :aria-label="'切换至'+a.title"
+                      :class="{active:i===carouselIndex%activeCampaigns.length}" @click="carouselIndex=i"></button>
+                  </div>
+                </div>
+              </template>
+              <div v-else class="h5-focus-fallback"><Waves :size="32"/><h1>去北海，遇见好时光。</h1><button type="button" @click="browse()">探索北海 <ArrowRight :size="17"/></button></div>
+            </section>
 
-          <section class="h5-campaign-zone">
-            <div class="h5-editorial-title"><div><small>WHAT'S HAPPENING</small><h2>这个假日，<em>精彩正在发生</em></h2><p>北海演出 · 城市文旅 · 赛事票根专享</p></div><span>城市活动</span></div>
-            <div v-if="currentCampaign" class="h5-campaign-carousel" @touchstart.passive="swipeStart=$event.changedTouches[0].screenX" @touchend.passive="Math.abs($event.changedTouches[0].screenX-swipeStart)>45&&stepBanner($event.changedTouches[0].screenX<swipeStart?1:-1)">
-              <article class="h5-campaign-slide" :class="'h5-theme-'+(currentCampaign.theme||'ocean')" @click="openActivity(currentCampaign)">
-                <img :src="currentCampaign.image" :alt="currentCampaign.title" loading="lazy"/>
-                <div class="h5-campaign-slide-shade"></div>
-                <div class="h5-campaign-slide-body"><span class="h5-activity-label"><Sparkles :size="14"/> {{currentCampaign.badge||currentCampaign.tag}}</span><strong>{{currentCampaign.title}}</strong><p>{{currentCampaign.subtitle||'北海城市好礼，等你来发现'}}</p><span class="h5-campaign-pill">凭本地票根领券 <ArrowRight :size="16"/></span></div>
-                <div class="h5-campaign-date">{{currentCampaign.date}}</div>
-              </article>
-              <div class="h5-carousel-controls"><div class="h5-carousel-dots"><button v-for="(a,i) in activeCampaigns" :key="a.id" type="button" :aria-label="'查看'+a.title" :class="{active:i===carouselIndex%activeCampaigns.length}" @click="carouselIndex=i"></button></div><div class="h5-carousel-arrows"><button type="button" aria-label="上一活动" @click="stepBanner(-1)">‹</button><button type="button" aria-label="下一活动" @click="stepBanner(1)">›</button></div></div>
-            </div>
-            <div class="h5-campaign-secondary"><button v-for="a in activeCampaigns.filter(x=>x.id!==currentCampaign?.id).slice(0,2)" :key="a.id" type="button" @click="openActivity(a)"><span class="h5-campaign-secondary-img"><img :src="a.image" :alt="a.title" loading="lazy"/></span><span><small>{{a.tag}}</small><strong>{{a.title}}</strong><span>查看活动 <ChevronRight :size="13"/></span></span></button></div>
-          </section>
-          <section class="h5-category-panel">
-            <button v-for="item in categories" :key="item.label" class="h5-category" @click="browse(item.type)">
-              <span class="h5-category-icon" :style="{ background: item.color }">{{item.emoji}}</span>
-              <small>{{item.label}}</small>
-            </button>
-          </section>
+            <section class="h5-clean-shortcuts" aria-label="快捷服务">
+              <button type="button" @click="navigate('verify')">
+                <span class="h5-clean-shortcut-icon"><Ticket :size="25" :stroke-width="1.7"/></span>
+                <span>票根服务</span>
+              </button>
+              <button type="button" @click="browse('住宿')">
+                <span class="h5-clean-shortcut-icon"><House :size="25" :stroke-width="1.7"/></span>
+                <span>酒店民宿</span>
+              </button>
+              <button type="button" @click="browse('全部')">
+                <span class="h5-clean-shortcut-icon"><Compass :size="25" :stroke-width="1.7"/></span>
+                <span>城市探索</span>
+              </button>
+              <button type="button" @click="goOffline()">
+                <span class="h5-clean-shortcut-icon"><CreditCard :size="25" :stroke-width="1.7"/></span>
+                <span>到店买单</span>
+              </button>
+            </section>
 
-          <section class="h5-service-duo">
-            <button type="button" @click="goOffline()"><span class="h5-service-symbol">💳</span><strong>到店优惠买单</strong><small>出示票根券 · 线下消费抵扣</small><span>去买单 <ArrowRight :size="15"/></span></button>
-            <button type="button" @click="navigate('coupons')"><span class="h5-service-symbol">🎫</span><strong>我的城市消费券</strong><small>领券后到线下合作门店使用</small><span>查看卡券 <ArrowRight :size="15"/></span></button>
-          </section>
-          <section class="h5-ticket-promo" @click="navigate(state.ticketVerified?'coupons':'verify')">
-            <div class="h5-ticket-promo-left"><span><Ticket :size="14"/> 票根专属权益</span><strong>{{state.ticketVerified ? '你的票根已激活' : '带上票根，领取北海好礼'}}</strong><small>{{state.ticketVerified ? '专属消费券等你领取' : '一键核验，解锁酒店、美食专属优惠'}}</small><button type="button">{{state.ticketVerified ? '去领优惠' : '立即核验'}} <ChevronRight :size="13"/></button></div>
-            <span class="h5-ticket-art">🎟️</span>
-          </section>
+            <section class="h5-clean-section h5-clean-stories">
+              <div class="h5-clean-section-heading">
+                <div><span class="h5-clean-eyebrow">CURATED STORIES</span><h2>这个季节，去北海。</h2><p>精彩活动，值得专程而来。</p></div>
+                <button type="button" @click="navigate('activities')" aria-label="查看全部活动"><ArrowUpRight :size="19"/></button>
+              </div>
+              <div class="h5-clean-story-stack">
+                <button v-for="(a,i) in otherCampaigns" :key="a.id" type="button"
+                  class="h5-clean-story" :class="{'h5-clean-story-second':i===1}" @click="openActivity(a)">
+                  <div class="h5-clean-story-photo"><img :src="a.image" :alt="a.title" loading="lazy"/></div>
+                  <div class="h5-clean-story-content">
+                    <small>{{a.tag}} · {{a.badge || '限时活动'}}</small>
+                    <strong>{{a.title}}</strong>
+                    <span>探索专题 <ArrowRight :size="15"/></span>
+                  </div>
+                </button>
+                <button v-if="!otherCampaigns.length" class="h5-clean-story-empty" type="button" @click="navigate('activities')">探索即将开启的北海活动 <ArrowRight :size="16"/></button>
+              </div>
+            </section>
 
-          <section class="h5-section">
-            <header class="h5-section-head"><div><small>EXCLUSIVE COUPONS</small><h2>北海礼遇券 <span>🎁</span></h2></div><button type="button" @click="navigate('coupons')">更多 <ChevronRight :size="15"/></button></header>
-            <div class="h5-coupon-scroll">
-              <article v-for="c in liveCoupons" :key="c.id" class="h5-coupon-mini">
-                <div><small>¥</small><strong>{{c.amount}}</strong><span>满 {{c.threshold}} 可用</span></div>
-                <div class="h5-coupon-mini-right"><strong>{{c.title}}</strong><small>{{c.category}}好礼 · 票根专享</small><button type="button" :disabled="state.claimedCoupons.includes(c.id)" @click="runClaim(c)">{{myCouponStatus(c)}}</button></div>
-              </article>
-            </div>
-          </section>
-
-          <section class="h5-section">
-            <header class="h5-section-head"><div><small>HANDPICKED FOR YOU</small><h2>北海精选 <span class="h5-title-label">人气推荐</span></h2></div><button type="button" @click="browse()">查看全部 <ChevronRight :size="15"/></button></header>
-            <div class="h5-product-grid">
-              <article v-for="p in featured" :key="p.id" class="h5-product" @click="startBuy(p)">
-                <div class="h5-product-image"><img :src="p.image" :alt="p.name" loading="lazy"/><span>{{p.type}}精选</span></div>
-                <div class="h5-product-info"><strong>{{p.name}}</strong><small><MapPin :size="11"/> {{p.distance}} <b><Star :size="11" fill="currentColor"/>{{p.rating}}</b></small><div class="h5-product-footer"><span><em>¥</em>{{p.price}} <del>¥{{p.original}}</del></span><button aria-label="查看详情" type="button"><ArrowRight :size="15"/></button></div></div>
-              </article>
-            </div>
-          </section>
-          <div class="h5-bottom-hint">北海城投票根经济 · 让城市生活更精彩</div>
+            <section class="h5-clean-section h5-clean-picks">
+              <div class="h5-clean-section-heading">
+                <div><span class="h5-clean-eyebrow">STAY · EAT · EXPLORE</span><h2>北海生活提案</h2><p>住一晚海边，尝一口鲜味。</p></div>
+                <button type="button" @click="browse()" aria-label="查看更多精选产品"><ArrowUpRight :size="19"/></button>
+              </div>
+              <div class="h5-clean-masonry">
+                <button v-for="(p,i) in featured" :key="p.id" type="button" class="h5-clean-product" @click="openProduct(p)">
+                  <div class="h5-clean-product-image"><img :src="p.image" :alt="p.name" loading="lazy"/></div>
+                  <div class="h5-clean-product-body">
+                    <span class="h5-clean-product-tag">{{p.type}} · {{p.distance}}</span>
+                    <strong>{{p.name}}</strong>
+                    <div><span><i>¥</i>{{p.price}} <small>起</small></span><ArrowUpRight :size="17"/></div>
+                  </div>
+                </button>
+              </div>
+              <button class="h5-clean-more" type="button" @click="browse()">探索更多北海好去处 <ArrowRight :size="16"/></button>
+            </section>
+            <p class="h5-clean-signoff">BEIHAI · WHERE GOOD DAYS BEGIN</p>
+          </div>
         </template>
 
-        <!-- Immersive campaign details -->
+        <!-- All activities stay on a secondary page -->
+        <template v-else-if="page === 'activities'">
+          <div class="h5-clean-page-head"><button type="button" @click="navigate('home')"><ArrowLeft :size="17"/> 首页</button><small>BEIHAI STORIES</small><h1>本期精彩活动</h1><p>精选北海活动，凭当地票根解锁专属礼遇。</p></div>
+          <div class="h5-clean-activity-list">
+            <button v-for="a in activeCampaigns" :key="a.id" class="h5-clean-activity-item" type="button" @click="openActivity(a)">
+              <img :src="a.image" :alt="a.title" loading="lazy"/>
+              <div><small>{{a.tag}} · {{a.badge || '北海好礼'}}</small><strong>{{a.title}}</strong><p>{{a.subtitle}}</p><span>查看活动详情 <ArrowRight :size="16"/></span></div>
+            </button>
+            <div v-if="!activeCampaigns.length" class="h5-empty"><NEmpty description="更多精彩活动，敬请期待"/></div>
+          </div>
+        </template>
+
+        <!-- Product detail: checkout remains a secondary action -->
+        <template v-else-if="page === 'product' && selectedProduct">
+          <div class="h5-clean-product-detail">
+            <div class="h5-clean-detail-photo"><img :src="selectedProduct.image" :alt="selectedProduct.name"/><button type="button" @click="browse(selectedProduct.type)"><ArrowLeft :size="18"/> 返回精选</button></div>
+            <section class="h5-clean-detail-main"><span>{{selectedProduct.type}} · {{selectedProduct.distance}}</span><h1>{{selectedProduct.name}}</h1><p><MapPin :size="15"/> {{selectedProduct.merchant}}　<Star :size="14" fill="currentColor"/> {{selectedProduct.rating}}</p><div class="h5-clean-detail-price"><small>¥</small>{{selectedProduct.price}} <del>¥{{selectedProduct.original}}</del></div></section>
+            <section class="h5-clean-detail-description"><h2>一次值得期待的北海体验</h2><p>用更轻松的方式认识这座滨海城市。选择你喜欢的体验，在线完成模拟预订；也可以到店消费并使用票根兑换的优惠券。</p><div><CheckCircle2 :size="17"/> 北海精选合作商户</div><div><CheckCircle2 :size="17"/> 在线模拟预订 · 线下可到店体验</div><button type="button" @click="startBuy(selectedProduct)">查看套餐并模拟预订 <ArrowRight :size="17"/></button></section>
+          </div>
+        </template>
+
+                <!-- Immersive campaign details -->
         <template v-else-if="page === 'campaign'">
           <div class="h5-campaign-details" v-if="selectedActivity">
             <div class="h5-campaign-detail-cover"><img :src="selectedActivity.image" :alt="selectedActivity.title"/><div class="h5-campaign-detail-gradient"></div><button class="h5-campaign-back" type="button" @click="navigate('home')"><ArrowLeft :size="19"/> 返回活动</button><span class="h5-campaign-detail-kicker">BEIHAI · HOLIDAY STORIES</span><h1>{{selectedActivity.title}}</h1></div>
