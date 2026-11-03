@@ -1,20 +1,21 @@
 <script setup>
 import { computed, h, reactive, ref } from 'vue'
 import { NButton, NInput, NInputNumber, NSelect, NDataTable, NTag, NModal, NSwitch, NEmpty, NProgress, useMessage } from 'naive-ui'
-import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, CreditCard, Download, Gift, LayoutDashboard, LockKeyhole, Plus, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, Store, Ticket, TrendingUp, Users, Wallet, X, Zap, ScanLine, RefreshCcw } from 'lucide-vue-next'
-import { state, addMerchant, setMerchantStatus, addCampaign, addCoupon, addStaff, updateOrderStatus, resetDemo, fmt } from '../store.js'
+import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, CreditCard, Download, Gift, LayoutDashboard, LockKeyhole, Plus, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, Store, Ticket, TrendingUp, Users, Wallet, X, Zap, ScanLine, RefreshCcw, QrCode, ClipboardCheck, CircleAlert } from 'lucide-vue-next'
+import { state, addMerchant, setMerchantStatus, addCampaign, addCoupon, addStaff, updateOrderStatus, resetDemo, fmt, redeemOffline, updateCampaignStatus } from '../store.js'
 const message=useMessage()
 const active=ref('overview'), search=ref(''), modal=ref(''), tablePage=ref(1)
 const menus=[
   {title:'工作台',items:[{id:'overview',label:'运营总览',icon:LayoutDashboard},{id:'analytics',label:'经营分析',icon:BarChart3}]},
-  {title:'业务运营',items:[{id:'campaigns',label:'票根活动',icon:Ticket},{id:'coupons',label:'权益营销',icon:Gift},{id:'orders',label:'订单管理',icon:ShoppingBag}]},
+  {title:'业务运营',items:[{id:'campaigns',label:'票根活动',icon:Ticket},{id:'tickets',label:'票根核验记录',icon:ShieldCheck},{id:'coupons',label:'消费券配置',icon:Gift},{id:'redeem',label:'线下券码核销',icon:QrCode},{id:'orders',label:'订单管理',icon:ShoppingBag}]},
   {title:'平台管理',items:[{id:'merchants',label:'商户管理',icon:Store},{id:'settlement',label:'支付清分',icon:Wallet},{id:'staff',label:'员工与权限',icon:Users},{id:'settings',label:'基础设置',icon:Settings2},{id:'audit',label:'操作日志',icon:ClipboardList}]}
 ]
-const titleMap={overview:'运营总览',analytics:'经营数据分析',campaigns:'票根活动管理',coupons:'权益营销中心',orders:'交易订单管理',merchants:'商户管理',settlement:'支付清分概览',staff:'员工与权限',settings:'基础设置',audit:'操作审计日志'}
+const titleMap={overview:'运营总览',analytics:'经营数据分析',campaigns:'票根活动管理',tickets:'票根核验记录',coupons:'消费券营销配置',redeem:'线下消费券核销',orders:'交易订单管理',merchants:'商户管理',settlement:'支付清分概览',staff:'员工与权限',settings:'基础设置',audit:'操作审计日志'}
 const merchantForm=reactive({name:'',category:'特色餐饮',contact:'',phone:''})
-const campaignForm=reactive({title:'',tag:'演艺活动',date:'2026-11-03 至 2026-12-31'})
-const couponForm=reactive({title:'',amount:20,threshold:100,category:'玩乐'})
+const campaignForm=reactive({title:'',subtitle:'凭北海本地票根，兑换城市消费券',tag:'演艺活动',date:'2026-11-03 至 2026-12-31',image:'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&q=85',badge:'新活动'})
+const couponForm=reactive({title:'',amount:20,threshold:100,category:'玩乐',campaignId:'A001',expiresAt:'2026-12-31'})
 const staffForm=reactive({name:'',role:'运营专员',department:'平台运营部'})
+const redeemCode=ref(''), redeemMerchant=ref('M001'), redeemSearch=ref('')
 const merchantCategories=['酒店住宿','特色餐饮','景区玩乐','商超零售','停车出行','其他']
 const couponCategories=['住宿','美食','玩乐']
 const tagType=(status)=>['正常','进行中','投放中','已结算','已核销','启用','待核销'].includes(status)?'success':status==='停用'?'error':'warning'
@@ -27,6 +28,9 @@ const moneyMetrics=computed(()=>[
 const merchantFiltered=computed(()=>state.merchants.filter(x=>(x.name+x.category+x.contact).includes(search.value)))
 const campaignFiltered=computed(()=>state.campaigns.filter(x=>(x.title+x.tag).includes(search.value)))
 const couponFiltered=computed(()=>state.coupons.filter(x=>(x.title+x.category).includes(search.value)))
+const vouchers=computed(()=>state.couponInstances.filter(x=>(x.code+x.holder+(x.merchantName||'')+(state.coupons.find(c=>c.id===x.couponId)?.title||'')).toLowerCase().includes(redeemSearch.value.trim().toLowerCase())))
+const redeemMerchantOptions=computed(()=>state.merchants.filter(x=>x.status==='正常').map(x=>({label:x.name+' · '+x.category,value:x.id})))
+const voucherPreview=computed(()=>state.couponInstances.find(x=>x.code===redeemCode.value.trim().toUpperCase()))
 const sampleOrders=[
 {id:'BH20261103001',product:'银滩海景酒店 · 雅致大床房',merchant:'北海银滩海景酒店',amount:399,status:'已核销',time:'2026-11-03 09:40'},
 {id:'BH20261103002',product:'海岸海鲜双人餐',merchant:'海岸海鲜风味餐厅',amount:168,status:'已核销',time:'2026-11-03 09:18'},
@@ -47,12 +51,19 @@ const merchantCols=[
  {title:'业态',key:'category'}, {title:'负责人',key:'contact'}, {title:'联系电话',key:'phone'}, {title:'累计订单',key:'orders'}, {title:'累计营收',key:'revenue',render:r=>'¥'+fmt(r.revenue)}, {title:'状态',key:'status',render:statusCell},
  {title:'操作',key:'actions',render:r=>h(NButton,{text:true,type:'primary',onClick:()=>{setMerchantStatus(r.id,r.status==='正常'?'停用':'正常');message.success('商户状态已更新')}},{default:()=>r.status==='正常'?'停用商户':'启用商户'})}
 ]
-const campaignCols=[{title:'活动名称',key:'title',render:r=>h('strong',r.title)},{title:'活动类型',key:'tag'},{title:'活动周期',key:'date'},{title:'领取量',key:'claims'},{title:'已核销',key:'redeemed'},{title:'状态',key:'status',render:statusCell}]
+const campaignCols=[{title:'活动名称',key:'title',render:r=>h('div',{class:'entity-cell'},[h('strong',r.title),h('small',r.subtitle||'')])},{title:'活动类型',key:'tag'},{title:'活动周期',key:'date'},{title:'领取量',key:'claims'},{title:'已核销',key:'redeemed'},{title:'状态',key:'status',render:statusCell},{title:'操作',key:'actions',render:r=>h(NButton,{type:'primary',text:true,onClick:()=>{updateCampaignStatus(r.id,r.status==='进行中'?'暂停':'进行中');message.success('活动状态已更新')}},{default:()=>r.status==='进行中'?'暂停活动':'上线活动'})}]
 const couponCols=[{title:'券名称',key:'title',render:r=>h('strong',r.title)},{title:'使用门槛',key:'threshold',render:r=>'满 ¥'+r.threshold},{title:'优惠金额',key:'amount',render:r=>'¥'+r.amount},{title:'适用分类',key:'category'},{title:'领取量',key:'issued'},{title:'核销量',key:'redeemed'},{title:'状态',key:'status',render:statusCell}]
 const orderCols=[{title:'订单编号',key:'id',render:r=>h('strong',r.id)},{title:'商品 / 服务',key:'product'},{title:'所属商户',key:'merchant'},{title:'实付金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'创建时间',key:'time'},{title:'状态',key:'status',render:statusCell},{title:'操作',key:'action',render:r=>state.orders.some(o=>o.id===r.id)?h(NButton,{text:true,type:'primary',disabled:r.status==='已核销',onClick:()=>{updateOrderStatus(r.id,'已核销');message.success('已完成模拟核销')}},{default:()=>r.status==='已核销'?'已完成':'模拟核销'}):h('span',{class:'table-muted'},'演示记录')}]
 const staffCols=[{title:'姓名',key:'name',render:r=>h('strong',r.name)},{title:'角色',key:'role'},{title:'所属部门',key:'department'},{title:'状态',key:'status',render:statusCell}]
+const ticketCols=[{title:'核验时间',key:'time'},{title:'票根编号',key:'code'},{title:'持票人',key:'holder'},{title:'本地活动',key:'event'},{title:'结果',key:'result',render:r=>h(NTag,{round:true,size:'small',type:r.result==='通过'?'success':'error'},{default:()=>r.result})}]
+const voucherCols=[{title:'核销码',key:'code',render:r=>h('strong',{style:'color:#2676c9;letter-spacing:1px'},r.code)},{title:'优惠券',key:'couponId',render:r=>state.coupons.find(c=>c.id===r.couponId)?.title||'未知券种'},{title:'持票人',key:'holder'},{title:'对应票根',key:'ticketCode'},{title:'核销门店',key:'merchantName',render:r=>r.merchantName||'—'},{title:'领取时间',key:'claimedAt'},{title:'核销时间',key:'redeemedAt',render:r=>r.redeemedAt||'—'},{title:'状态',key:'status',render:r=>h(NTag,{size:'small',round:true,type:r.status==='未使用'?'warning':'success'},{default:()=>r.status})}]
 const auditCols=[{title:'发生时间',key:'time'},{title:'操作用户',key:'user'},{title:'操作类型',key:'action'},{title:'操作明细',key:'detail'}]
 const settlementCols=[{title:'支付流水',key:'id'},{title:'收款商户',key:'merchant'},{title:'交易金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'平台服务费 (10%)',key:'fee',render:r=>'¥'+fmt(r.fee)},{title:'商户应收',key:'merchantShare',render:r=>'¥'+fmt(r.merchantShare)},{title:'状态',key:'status',render:statusCell}]
+function runOfflineRedeem(){
+  if (!redeemCode.value.trim()){message.warning('请填写游客提供的核销码');return}
+  const result=redeemOffline(redeemCode.value,redeemMerchant.value)
+  if(result.ok){message.success(result.message);redeemCode.value=''}else message.error(result.message)
+}
 function showModal(name){modal.value=name}
 function closeModal(){modal.value=''}
 function saveModal(){
@@ -95,9 +106,10 @@ function switchTab(id){active.value=id;search.value='';window.scrollTo({top:0,be
 
         <template v-else-if="active==='analytics'"><div class="backoffice-metrics"><article v-for="item in moneyMetrics" :key="item.label" class="backoffice-metric"><div class="metric-top">{{item.label}} <BarChart3 :size="19"/></div><strong>{{item.value}}</strong><div class="metric-foot">{{item.change}} 环比增长</div></article></div><section class="backoffice-panel"><div class="panel-title-row"><div><h2>各业态经营表现</h2><p>按交易额统计 · 示例数据</p></div></div><div class="business-bars"><div v-for="item in [{name:'酒店住宿',value:34.2},{name:'特色餐饮',value:26.1},{name:'景区玩乐',value:20.3},{name:'商超零售',value:12.4},{name:'停车出行',value:7}]" :key="item.name"><span>{{item.name}}</span><div><i :style="{width:(item.value*2.6)+'%'}"></i></div><strong>{{item.value}}%</strong></div></div></section></template>
 
-        <template v-else-if="['campaigns','coupons','merchants','orders','staff','audit'].includes(active)">
+        <template v-else-if="['campaigns','coupons','merchants','orders','staff','audit','tickets'].includes(active)">
           <div class="backoffice-mini-stats"><div><span>活动总数</span><strong>{{state.campaigns.length}}</strong></div><div><span>权益券种</span><strong>{{state.coupons.length}}</strong></div><div><span>合作商户</span><strong>{{state.merchants.length}}</strong></div><div><span>订单记录</span><strong>{{allOrders.length}}</strong></div></div>
           <section class="backoffice-panel list-panel"><div class="panel-title-row"><div><h2>{{titleMap[active]}}列表</h2><p>数据变更将同步在同一浏览器的游客端与后台演示</p></div><div class="table-tools"><n-input v-model:value="search" clearable placeholder="搜索当前列表" style="width:230px"><template #prefix><Search :size="15"/></template></n-input><n-button v-if="active==='merchants'" secondary @click="exportCsv"><Download :size="16"/> 导出商户</n-button></div></div>
+            <n-data-table v-if="active==='tickets'" :columns="ticketCols" :data="state.ticketVerifications" :pagination="{pageSize:8}" :bordered="false" :scroll-x="830"/>
             <n-data-table v-if="active==='campaigns'" :columns="campaignCols" :data="campaignFiltered" :pagination="{pageSize:8}" :bordered="false" :scroll-x="700"/>
             <n-data-table v-if="active==='coupons'" :columns="couponCols" :data="couponFiltered" :pagination="{pageSize:8}" :bordered="false" :scroll-x="700"/>
             <n-data-table v-if="active==='merchants'" :columns="merchantCols" :data="merchantFiltered" :pagination="{pageSize:8}" :bordered="false" :scroll-x="900"/>
@@ -106,6 +118,34 @@ function switchTab(id){active.value=id;search.value='';window.scrollTo({top:0,be
             <n-data-table v-if="active==='audit'" :columns="auditCols" :data="state.audit" :pagination="{pageSize:8}" :bordered="false" :scroll-x="750"/>
           </section>
           <div v-if="active==='merchants'" class="backoffice-callout"><Store :size="20"/><div><strong>商户管理模式说明</strong><p>本次 Demo 不提供商户自助入驻或商户端；仅由后台管理员添加、启用、停用商户并维护信息。停用后，游客端不再展示该商户的精选商品。</p></div></div>
+        </template>
+
+        <template v-else-if="active==='redeem'">
+          <div class="redemption-metrics">
+            <div><span>实际演示领券数</span><strong>{{state.couponInstances.length}}</strong></div>
+            <div><span>待线下核销</span><strong>{{state.couponInstances.filter(x=>x.status==='未使用').length}}</strong></div>
+            <div><span>已核销消费券</span><strong>{{state.couponInstances.filter(x=>x.status==='已核销').length}}</strong></div>
+          </div>
+          <div class="redemption-grid">
+            <section class="backoffice-panel redemption-panel">
+              <div class="panel-title-row"><div><h2><QrCode :size="19"/> 线下门店验券</h2><p>游客出示手机 H5 券码，平台员工代门店验证、核销</p></div><n-tag type="warning" round>本地演示</n-tag></div>
+              <label>游客核销码</label>
+              <n-input v-model:value="redeemCode" size="large" placeholder="例如 BHxxxxxxxxxxxx" clearable @keyup.enter="runOfflineRedeem"/>
+              <label>核销商户</label>
+              <n-select v-model:value="redeemMerchant" :options="redeemMerchantOptions" size="large" placeholder="请选择线下合作门店"/>
+              <div v-if="voucherPreview" class="redeem-preview">
+                <div><strong>{{state.coupons.find(c=>c.id===voucherPreview.couponId)?.title}}</strong><n-tag size="small" :type="voucherPreview.status==='未使用'?'warning':'success'">{{voucherPreview.status}}</n-tag></div>
+                <span>持票人：{{voucherPreview.holder}} · 票根：{{voucherPreview.ticketCode}}</span>
+                <small>适用：{{state.coupons.find(c=>c.id===voucherPreview.couponId)?.category}} · 截止：{{voucherPreview.expiresAt}}</small>
+              </div>
+              <n-button type="primary" block size="large" style="margin-top:18px" @click="runOfflineRedeem"><CheckCircle2 :size="16"/> 核验并模拟核销</n-button>
+            </section>
+            <section class="backoffice-panel redemption-guide"><div class="panel-title-row"><div><h2>线下消费闭环</h2><p>面向平台代运营人员的操作说明</p></div></div>
+              <div v-for="(item,i) in ['游客提供北海本地演出、赛事或文旅票根完成核验','游客领取对应活动消费券，获得唯一核销码','游客到参与活动的线下合作商户消费并出示券码','后台选择商户并输入券码，校验券种、状态和业态后核销','核销状态同步到同浏览器游客券包，留存时间、门店和日志']" :key="item" class="redeem-guide-step"><span>{{i+1}}</span><p>{{item}}</p></div>
+              <div class="redeem-warning"><CircleAlert :size="17"/><span>纯前端演示：无法跨设备实时同步或真实防伪，不可用于真实商户线下收券。上线前须接入可信后端、票务验证、数据库事务与核销鉴权。</span></div>
+            </section>
+          </div>
+          <section class="backoffice-panel redemption-table"><div class="panel-title-row"><div><h2>消费券领取与核销流水</h2><p>记录券码、票根、领取时间和线下核销门店</p></div><n-input v-model:value="redeemSearch" placeholder="搜索券码 / 持票人" clearable style="width:240px"/></div><n-data-table :columns="voucherCols" :data="vouchers" :pagination="{pageSize:8}" :bordered="false" :scroll-x="1150"/></section>
         </template>
 
         <template v-else-if="active==='settlement'">
@@ -121,8 +161,8 @@ function switchTab(id){active.value=id;search.value='';window.scrollTo({top:0,be
     </main>
     <n-modal :show="!!modal" @update:show="v=>{if(!v)closeModal()}" preset="card" :title="modal==='merchant'?'添加合作商户':modal==='campaign'?'新建票根活动':modal==='coupon'?'新增营销优惠券':'添加后台员工'" style="max-width:520px" :bordered="false" class="backoffice-modal">
       <div v-if="modal==='merchant'" class="modal-fields"><label>商户名称 <em>*</em></label><n-input v-model:value="merchantForm.name" placeholder="例如：北海银滩海景咖啡馆"/><label>经营业态</label><n-select v-model:value="merchantForm.category" :options="merchantCategories.map(v=>({label:v,value:v}))"/><label>负责人 <em>*</em></label><n-input v-model:value="merchantForm.contact" placeholder="请输入负责人姓名"/><label>联系电话 <em>*</em></label><n-input v-model:value="merchantForm.phone" placeholder="11位手机号码" maxlength="11"/></div>
-      <div v-else-if="modal==='campaign'" class="modal-fields"><label>活动名称 <em>*</em></label><n-input v-model:value="campaignForm.title" placeholder="请输入活动名称"/><label>活动类型</label><n-select v-model:value="campaignForm.tag" :options="['演艺活动','体育赛事','文旅活动','城市营销'].map(v=>({label:v,value:v}))"/><label>活动周期</label><n-input v-model:value="campaignForm.date"/></div>
-      <div v-else-if="modal==='coupon'" class="modal-fields"><label>优惠券名称 <em>*</em></label><n-input v-model:value="couponForm.title" placeholder="例如：银滩玩乐立减券"/><label>优惠金额 (元)</label><n-input-number v-model:value="couponForm.amount" :min="1" :precision="0" style="width:100%"/><label>满减门槛 (元)</label><n-input-number v-model:value="couponForm.threshold" :min="1" :precision="0" style="width:100%"/><label>适用业态</label><n-select v-model:value="couponForm.category" :options="couponCategories.map(v=>({label:v,value:v}))"/></div>
+      <div v-else-if="modal==='campaign'" class="modal-fields"><label>活动名称 <em>*</em></label><n-input v-model:value="campaignForm.title" placeholder="请输入活动名称"/><label>活动类型</label><n-select v-model:value="campaignForm.tag" :options="['演艺活动','体育赛事','文旅活动','城市营销'].map(v=>({label:v,value:v}))"/><label>活动说明（游客端显示）</label><n-input v-model:value="campaignForm.subtitle" placeholder="例如：票根换礼遇，线下门店畅享"/><label>活动角标</label><n-input v-model:value="campaignForm.badge" placeholder="例如：城市福利"/><label>活动 Banner 图片地址</label><n-input v-model:value="campaignForm.image" placeholder="https://..."/><label>活动周期</label><n-input v-model:value="campaignForm.date"/></div>
+      <div v-else-if="modal==='coupon'" class="modal-fields"><label>优惠券名称 <em>*</em></label><n-input v-model:value="couponForm.title" placeholder="例如：银滩玩乐立减券"/><label>优惠金额 (元)</label><n-input-number v-model:value="couponForm.amount" :min="1" :precision="0" style="width:100%"/><label>满减门槛 (元)</label><n-input-number v-model:value="couponForm.threshold" :min="1" :precision="0" style="width:100%"/><label>适用业态</label><n-select v-model:value="couponForm.category" :options="couponCategories.map(v=>({label:v,value:v}))"/><label>归属平台活动</label><n-select v-model:value="couponForm.campaignId" :options="state.campaigns.map(a=>({label:a.title,value:a.id}))"/><label>使用有效期截止</label><n-input v-model:value="couponForm.expiresAt" placeholder="YYYY-MM-DD"/></div>
       <div v-else-if="modal==='staff'" class="modal-fields"><label>员工姓名 <em>*</em></label><n-input v-model:value="staffForm.name" placeholder="请输入员工姓名"/><label>员工角色</label><n-select v-model:value="staffForm.role" :options="['运营专员','运营主管','系统管理员','财务人员'].map(v=>({label:v,value:v}))"/><label>所属部门</label><n-input v-model:value="staffForm.department" placeholder="所属部门"/></div>
       <template #footer><div class="modal-footer"><n-button @click="closeModal">取消</n-button><n-button type="primary" @click="saveModal">保存并创建</n-button></div></template>
     </n-modal>
