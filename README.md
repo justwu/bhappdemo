@@ -1,44 +1,59 @@
-# 北海城投 · 票根经济全域数字化运营平台（交互 Demo）
+# 北海城投 · 票根经济全域数字化运营平台（Vue 3 Demo）
 
-基于 **Vue 3 + Vite** 的前端单页演示站点。使用模拟数据，不接入真实票根、实名核验、支付、清结算或 AI 服务。
+基于 **Vue 3 + Vite + Naive UI** 的响应式交互原型。只保留两个独立入口，**不提供商户端**：
 
-## 页面入口
+- **游客端**：票根模拟核验、领取优惠券、本地生活精选商品、模拟支付、订单查询、个人中心。
+- **运营管理 PC 后台**：运营总览、经营数据、票根活动、优惠券、订单、**商户后台录入/启停**、支付清分演示、员工角色、系统设置及日志。
 
-- 消费者 / 游客：`/#/consumer`（票根验证 → 领券 → 本地生活 → 模拟支付与订单）
-- 商户端：`/#/merchant`（商户看板、优惠券模拟核销、订单）
-- 运营端：`/#/operations`（数据总览、活动管理、权益营销、商户、订单、分析）
-- 财务 / 清分：`/#/finance`（聚合支付数据、模拟清分分账和风险对账）
-- 领导驾驶舱：`/#/cockpit`（全域经营可视化）
+## 入口地址
 
-演示票根编号 `BH2026`；演示商户核销码 `BH-8899`。页面顶部可切换全部角色。消费者模拟购买及运营端创建活动会写入浏览器本地存储。
+GitHub Pages 正式开启后：
 
-## 本地开发
+- 平台入口：https://justwu.github.io/bhappdemo/
+- 游客端：https://justwu.github.io/bhappdemo/#/visitor
+- 运营管理后台：https://justwu.github.io/bhappdemo/#/backoffice
 
-要求 Node.js 20.19+ 或 22+。
+兼容旧入口 `#/consumer`、`#/operations`、`#/admin`，会分别转到游客端或统一后台。
+
+**重要：站点访问须先在仓库 [Settings → Pages](https://github.com/justwu/bhappdemo/settings/pages) 中将 Build and deployment 的 Source 设置为 GitHub Actions。** 本仓库提供 `.github/workflows/deploy-pages.yml`，之后在 Actions 页重新运行该工作流，或向 main 提交新代码触发发布。
+
+## 本地运行
+
+要求 Node.js 20.19+ 或 22.12+。
 
 ```bash
 npm install
 npm run dev
 ```
 
-构建与本地预览：
+生产构建：
 
 ```bash
 npm run build
 npm run preview
 ```
 
-## 发布
+Cloudflare Pages 可直接连接 GitHub 仓库，构建命令 `npm run build`，输出目录 `dist`；项目 `vite.config.js` 使用相对资源路径，可兼容 GitHub Pages 项目子路径和 Cloudflare Pages 根路径。
 
-GitHub Actions 工作流 `.github/workflows/deploy-pages.yml` 在推送到 `main` 后构建 `dist` 并部署到 GitHub Pages。**首次启用需要仓库管理员在 Settings → Pages → Build and deployment → Source 选择 GitHub Actions**，然后从 Actions 页面重新运行部署工作流。发布后地址为：
+## 演示说明
 
-https://justwu.github.io/bhappdemo/
+- 票根模拟编号：`BH2026`，持票人任意非空姓名。
+- 订单、优惠券领取、活动、商户、员工、设置使用浏览器 LocalStorage 持久化。
+- 后台停用商户后，其在游客端的预设商品将不再展示；后台新增商户仅新增商户档案，本演示尚无商品录入界面。
+- 资金清分、经营报表和部分历史订单为示例数据。
+- 演示没有正式后台服务、用户登录权限验证、真实票务核验、实名校验、支付、清结算或 AI 调用，不能用于生产经营。
 
-也可在 Cloudflare Pages 中连接此仓库，设置构建命令 `npm run build`、输出目录 `dist`，无需更改项目。
+## 技术目录
 
-## 演示范围和限制
-
-- 本项目是 UI 原型 + 本地交互流程，不包含生产后端或真实身份验证。
-- 支付、清分分账、风控与数据大屏均为模拟展示，金额不可用于财务或结算依据。
-- 页面中的商户、活动、订单、统计指标和产品图片均为演示数据。
-- 实际接入后还需要服务端权限、数据持久化、商户资质验证、支付服务商渠道及审计能力。
+```
+index.html
+src/
+  main.js
+  App.vue
+  store.js
+  theme.css
+  views/
+    VisitorView.vue
+    BackofficeView.vue
+.github/workflows/deploy-pages.yml
+```
