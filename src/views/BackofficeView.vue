@@ -2,20 +2,21 @@
 import { computed, h, reactive, ref } from 'vue'
 import { NButton, NInput, NInputNumber, NSelect, NDataTable, NTag, NModal, NSwitch, NEmpty, NProgress, useMessage } from 'naive-ui'
 import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, CreditCard, Download, Gift, LayoutDashboard, LockKeyhole, Plus, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, Store, Ticket, TrendingUp, Users, Wallet, X, Zap, ScanLine, RefreshCcw, QrCode, ClipboardCheck, CircleAlert } from 'lucide-vue-next'
-import { state, addMerchant, setMerchantStatus, addCampaign, addCoupon, addStaff, updateOrderStatus, resetDemo, fmt, redeemOffline, updateCampaignStatus } from '../store.js'
+import { state, addMerchant, setMerchantStatus, addCampaign, addCoupon, addStaff, updateOrderStatus, resetDemo, fmt, redeemOffline, updateCampaignStatus, createOfflinePayment } from '../store.js'
 const message=useMessage()
 const active=ref('overview'), search=ref(''), modal=ref(''), tablePage=ref(1)
 const menus=[
   {title:'工作台',items:[{id:'overview',label:'运营总览',icon:LayoutDashboard},{id:'analytics',label:'经营分析',icon:BarChart3}]},
-  {title:'业务运营',items:[{id:'campaigns',label:'票根活动',icon:Ticket},{id:'tickets',label:'票根核验记录',icon:ShieldCheck},{id:'coupons',label:'消费券配置',icon:Gift},{id:'redeem',label:'线下券码核销',icon:QrCode},{id:'orders',label:'订单管理',icon:ShoppingBag}]},
+  {title:'业务运营',items:[{id:'campaigns',label:'票根活动',icon:Ticket},{id:'tickets',label:'票根核验记录',icon:ShieldCheck},{id:'coupons',label:'消费券配置',icon:Gift},{id:'redeem',label:'线下券码核销',icon:QrCode},{id:'cashier',label:'线下门店收银',icon:CreditCard},{id:'orders',label:'订单管理',icon:ShoppingBag}]},
   {title:'平台管理',items:[{id:'merchants',label:'商户管理',icon:Store},{id:'settlement',label:'支付清分',icon:Wallet},{id:'staff',label:'员工与权限',icon:Users},{id:'settings',label:'基础设置',icon:Settings2},{id:'audit',label:'操作日志',icon:ClipboardList}]}
 ]
-const titleMap={overview:'运营总览',analytics:'经营数据分析',campaigns:'票根活动管理',tickets:'票根核验记录',coupons:'消费券营销配置',redeem:'线下消费券核销',orders:'交易订单管理',merchants:'商户管理',settlement:'支付清分概览',staff:'员工与权限',settings:'基础设置',audit:'操作审计日志'}
+const titleMap={overview:'运营总览',analytics:'经营数据分析',campaigns:'票根活动管理',tickets:'票根核验记录',coupons:'消费券营销配置',redeem:'线下消费券核销',cashier:'线下门店收银台',orders:'交易订单管理',merchants:'商户管理',settlement:'支付清分概览',staff:'员工与权限',settings:'基础设置',audit:'操作审计日志'}
 const merchantForm=reactive({name:'',category:'特色餐饮',contact:'',phone:''})
 const campaignForm=reactive({title:'',subtitle:'凭北海本地票根，兑换城市消费券',tag:'演艺活动',date:'2026-11-03 至 2026-12-31',image:'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&q=85',badge:'新活动'})
 const couponForm=reactive({title:'',amount:20,threshold:100,category:'玩乐',campaignId:'A001',expiresAt:'2026-12-31'})
 const staffForm=reactive({name:'',role:'运营专员',department:'平台运营部'})
 const redeemCode=ref(''), redeemMerchant=ref('M001'), redeemSearch=ref('')
+const payMerchant=ref('M002'),payAmount=ref(168),payCoupon=ref(''),payMethod=ref('微信支付')
 const merchantCategories=['酒店住宿','特色餐饮','景区玩乐','商超零售','停车出行','其他']
 const couponCategories=['住宿','美食','玩乐']
 const tagType=(status)=>['正常','进行中','投放中','已结算','已核销','启用','待核销'].includes(status)?'success':status==='停用'?'error':'warning'
@@ -31,13 +32,17 @@ const couponFiltered=computed(()=>state.coupons.filter(x=>(x.title+x.category).i
 const vouchers=computed(()=>state.couponInstances.filter(x=>(x.code+x.holder+(x.merchantName||'')+(state.coupons.find(c=>c.id===x.couponId)?.title||'')).toLowerCase().includes(redeemSearch.value.trim().toLowerCase())))
 const redeemMerchantOptions=computed(()=>state.merchants.filter(x=>x.status==='正常').map(x=>({label:x.name+' · '+x.category,value:x.id})))
 const voucherPreview=computed(()=>state.couponInstances.find(x=>x.code===redeemCode.value.trim().toUpperCase()))
+const payPreview=computed(()=>state.couponInstances.find(x=>x.code===payCoupon.value.trim().toUpperCase()))
+const payCouponInfo=computed(()=>state.coupons.find(x=>x.id===payPreview.value?.couponId))
+const payMerchantRecord=computed(()=>state.merchants.find(x=>x.id===payMerchant.value))
+const payDiscount=computed(()=>payPreview.value?.status==='未使用'&&payCouponInfo.value?.status==='投放中'&&payCouponInfo.value?.threshold<=Number(payAmount.value)&&({住宿:'酒店住宿',美食:'特色餐饮',玩乐:'景区玩乐'})[payCouponInfo.value?.category]===payMerchantRecord.value?.category ? Math.min(Number(payAmount.value)||0,payCouponInfo.value.amount):0)
 const sampleOrders=[
 {id:'BH20261103001',product:'银滩海景酒店 · 雅致大床房',merchant:'北海银滩海景酒店',amount:399,status:'已核销',time:'2026-11-03 09:40'},
 {id:'BH20261103002',product:'海岸海鲜双人餐',merchant:'海岸海鲜风味餐厅',amount:168,status:'已核销',time:'2026-11-03 09:18'},
 {id:'BH20261103003',product:'北海老街文化体验通票',merchant:'北海老街文化体验馆',amount:128,status:'待核销',time:'2026-11-03 08:55'},
 {id:'BH20261103004',product:'银滩海上运动体验',merchant:'银滩海上运动中心',amount:228,status:'已核销',time:'2026-11-03 08:32'}
 ]
-const allOrders=computed(()=>[...state.orders,...sampleOrders])
+const allOrders=computed(()=>[...state.orders,...state.offlineTransactions.map(p=>({...p,product:'线下到店消费',merchant:p.merchantName,status:p.status,channel:'线下到店'})),...sampleOrders])
 const filteredOrders=computed(()=>allOrders.value.filter(x=>(x.id+x.product+x.merchant).includes(search.value)))
 const settlementRows=[
 {id:'ZF20261103001',merchant:'北海银滩海景酒店',amount:399,fee:39.9,merchantShare:359.1,status:'已结算'},
@@ -53,12 +58,14 @@ const merchantCols=[
 ]
 const campaignCols=[{title:'活动名称',key:'title',render:r=>h('div',{class:'entity-cell'},[h('strong',r.title),h('small',r.subtitle||'')])},{title:'活动类型',key:'tag'},{title:'活动周期',key:'date'},{title:'领取量',key:'claims'},{title:'已核销',key:'redeemed'},{title:'状态',key:'status',render:statusCell},{title:'操作',key:'actions',render:r=>h(NButton,{type:'primary',text:true,onClick:()=>{updateCampaignStatus(r.id,r.status==='进行中'?'暂停':'进行中');message.success('活动状态已更新')}},{default:()=>r.status==='进行中'?'暂停活动':'上线活动'})}]
 const couponCols=[{title:'券名称',key:'title',render:r=>h('strong',r.title)},{title:'使用门槛',key:'threshold',render:r=>'满 ¥'+r.threshold},{title:'优惠金额',key:'amount',render:r=>'¥'+r.amount},{title:'适用分类',key:'category'},{title:'领取量',key:'issued'},{title:'核销量',key:'redeemed'},{title:'状态',key:'status',render:statusCell}]
-const orderCols=[{title:'订单编号',key:'id',render:r=>h('strong',r.id)},{title:'商品 / 服务',key:'product'},{title:'所属商户',key:'merchant'},{title:'实付金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'创建时间',key:'time'},{title:'状态',key:'status',render:statusCell},{title:'操作',key:'action',render:r=>state.orders.some(o=>o.id===r.id)?h(NButton,{text:true,type:'primary',disabled:r.status==='已核销',onClick:()=>{updateOrderStatus(r.id,'已核销');message.success('已完成模拟核销')}},{default:()=>r.status==='已核销'?'已完成':'模拟核销'}):h('span',{class:'table-muted'},'演示记录')}]
+const orderCols=[{title:'渠道',key:'channel',render:r=>r.channel||'历史示例'},{title:'订单编号',key:'id',render:r=>h('strong',r.id)},{title:'商品 / 服务',key:'product'},{title:'所属商户',key:'merchant'},{title:'实付金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'创建时间',key:'time'},{title:'状态',key:'status',render:statusCell},{title:'操作',key:'action',render:r=>state.orders.some(o=>o.id===r.id)?h(NButton,{text:true,type:'primary',disabled:r.status==='已核销',onClick:()=>{updateOrderStatus(r.id,'已核销');message.success('已完成模拟核销')}},{default:()=>r.status==='已核销'?'已完成':'模拟核销'}):h('span',{class:'table-muted'},'演示记录')}]
 const staffCols=[{title:'姓名',key:'name',render:r=>h('strong',r.name)},{title:'角色',key:'role'},{title:'所属部门',key:'department'},{title:'状态',key:'status',render:statusCell}]
 const ticketCols=[{title:'核验时间',key:'time'},{title:'票根编号',key:'code'},{title:'持票人',key:'holder'},{title:'本地活动',key:'event'},{title:'结果',key:'result',render:r=>h(NTag,{round:true,size:'small',type:r.result==='通过'?'success':'error'},{default:()=>r.result})}]
 const voucherCols=[{title:'核销码',key:'code',render:r=>h('strong',{style:'color:#2676c9;letter-spacing:1px'},r.code)},{title:'优惠券',key:'couponId',render:r=>state.coupons.find(c=>c.id===r.couponId)?.title||'未知券种'},{title:'持票人',key:'holder'},{title:'对应票根',key:'ticketCode'},{title:'核销门店',key:'merchantName',render:r=>r.merchantName||'—'},{title:'领取时间',key:'claimedAt'},{title:'核销时间',key:'redeemedAt',render:r=>r.redeemedAt||'—'},{title:'状态',key:'status',render:r=>h(NTag,{size:'small',round:true,type:r.status==='未使用'?'warning':'success'},{default:()=>r.status})}]
 const auditCols=[{title:'发生时间',key:'time'},{title:'操作用户',key:'user'},{title:'操作类型',key:'action'},{title:'操作明细',key:'detail'}]
-const settlementCols=[{title:'支付流水',key:'id'},{title:'收款商户',key:'merchant'},{title:'交易金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'平台服务费 (10%)',key:'fee',render:r=>'¥'+fmt(r.fee)},{title:'商户应收',key:'merchantShare',render:r=>'¥'+fmt(r.merchantShare)},{title:'状态',key:'status',render:statusCell}]
+const offlinePaymentCols=[{title:'交易时间',key:'time'},{title:'交易号',key:'id'},{title:'消费商户',key:'merchantName'},{title:'支付方式',key:'paymentMethod'},{title:'原价',key:'original',render:r=>'¥'+fmt(r.original)},{title:'优惠',key:'discount',render:r=>'¥'+fmt(r.discount)},{title:'实付金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'状态',key:'status',render:statusCell}]
+const settlementCols=[{title:'支付流水',key:'id',{title:'收款商户',key:'merchant'},{title:'交易金额',key:'amount',render:r=>'¥'+fmt(r.amount)},{title:'平台服务费 (10%)',key:'fee',render:r=>'¥'+fmt(r.fee)},{title:'商户应收',key:'merchantShare',render:r=>'¥'+fmt(r.merchantShare)},{title:'状态',key:'status',render:statusCell}]
+function doCashierPayment(){const r=createOfflinePayment({merchantId:payMerchant.value,originalAmount:payAmount.value,couponCode:payCoupon.value,paymentMethod:payMethod.value});if(r.ok){message.success(r.message);payCoupon.value=''}else message.warning(r.message)}
 function runOfflineRedeem(){
   if (!redeemCode.value.trim()){message.warning('请填写游客提供的核销码');return}
   const result=redeemOffline(redeemCode.value,redeemMerchant.value)
@@ -120,6 +127,27 @@ function switchTab(id){active.value=id;search.value='';window.scrollTo({top:0,be
           <div v-if="active==='merchants'" class="backoffice-callout"><Store :size="20"/><div><strong>商户管理模式说明</strong><p>本次 Demo 不提供商户自助入驻或商户端；仅由后台管理员添加、启用、停用商户并维护信息。停用后，游客端不再展示该商户的精选商品。</p></div></div>
         </template>
 
+        <template v-else-if="active==='cashier'">
+          <div class="redemption-metrics"><div><span>线下模拟交易笔数</span><strong>{{state.offlineTransactions.length}}</strong></div><div><span>线下消费总金额</span><strong>¥{{fmt(state.offlineTransactions.reduce((n,p)=>n+p.original,0))}}</strong></div><div><span>优惠券抵扣金额</span><strong>¥{{fmt(state.offlineTransactions.reduce((n,p)=>n+p.discount,0))}}</strong></div></div>
+          <div class="redemption-grid">
+            <section class="backoffice-panel redemption-panel">
+              <div class="panel-title-row"><div><h2><CreditCard :size="19"/> 合作门店线下收银</h2><p>非线上预订交易，录入线下消费实付金额与优惠抵扣</p></div><n-tag type="warning" round>模拟交易</n-tag></div>
+              <label>消费商户</label><n-select v-model:value="payMerchant" :options="redeemMerchantOptions" size="large"/>
+              <label>原始消费金额（元）</label><n-input-number v-model:value="payAmount" :min="0.01" :max="999999" :precision="2" size="large" style="width:100%"/>
+              <label>游客消费券核销码（非必填）</label><n-input v-model:value="payCoupon" placeholder="游客提供 BH 开头核销码，无券可空" clearable/>
+              <div v-if="payPreview" class="redeem-preview"><div><strong>{{payCouponInfo?.title||'未找到券种'}}</strong><n-tag :type="payPreview.status==='未使用'?'warning':'success'">{{payPreview.status}}</n-tag></div><span>适用消费金额：满 {{payCouponInfo?.threshold}} 元 · 优惠 ¥{{payCouponInfo?.amount}}</span></div>
+              <label>模拟付款方式</label><n-select v-model:value="payMethod" :options="['微信支付','支付宝','现金','银行卡'].map(x=>({label:x,value:x}))" size="large"/>
+              <div class="cashier-totals"><div><span>消费金额</span><strong>¥{{fmt(Number(payAmount)||0)}}</strong></div><div><span>优惠券抵扣</span><strong>-¥{{fmt(payDiscount)}}</strong></div><div><b>模拟实付</b><strong>¥{{fmt(Math.max(0,(Number(payAmount)||0)-payDiscount))}}</strong></div></div>
+              <n-button type="primary" block size="large" @click="doCashierPayment"><CheckCircle2 :size="16"/> 确认线下模拟支付</n-button>
+            </section>
+            <section class="backoffice-panel redemption-guide"><div class="panel-title-row"><div><h2>线上与线下双支付路径</h2><p>区分预订订单与门店真实消费场景</p></div></div>
+              <div v-for="(label,i) in ['线上预订：游客选择套餐或酒店 → 模拟支付 → 生成待核销订单','线下消费：游客到店 → 商户选择 → 输入消费金额','游客出示活动票根兑换的优惠券码，可选抵扣','系统判断券种、有效期、门槛、门店业态，成功后标记已使用','产生线下交易记录；统一后台管理、统计及对账']" :key="label" class="redeem-guide-step"><span>{{i+1}}</span><p>{{label}}</p></div>
+              <div class="redeem-warning"><CircleAlert :size="17"/><span>当前全部为本地前端演示。真实线下扫码收款、支付通知、财务分账与券防伪均未接入，不可代替收银系统。</span></div>
+            </section>
+          </div>
+          <section class="backoffice-panel redemption-table"><div class="panel-title-row"><div><h2>线下支付交易流水</h2><p>支付渠道、订单金额、优惠金额、商户与结果</p></div></div><n-data-table :columns="offlinePaymentCols" :data="state.offlineTransactions" :pagination="{pageSize:8}" :bordered="false" :scroll-x="1050"/></section>
+        </template>
+
         <template v-else-if="active==='redeem'">
           <div class="redemption-metrics">
             <div><span>实际演示领券数</span><strong>{{state.couponInstances.length}}</strong></div>
@@ -151,6 +179,7 @@ function switchTab(id){active.value=id;search.value='';window.scrollTo({top:0,be
         <template v-else-if="active==='settlement'">
           <div class="backoffice-metrics finance-metrics"><article v-for="m in [{label:'示例交易金额',value:'¥328,560',icon:CreditCard},{label:'商户应收金额',value:'¥295,704',icon:Store},{label:'平台服务费',value:'¥32,856',icon:Wallet},{label:'对账成功率',value:'99.99%',icon:CheckCircle2}]" :key="m.label" class="backoffice-metric"><div class="metric-top">{{m.label}}<component :is="m.icon" :size="20"/></div><strong>{{m.value}}</strong><div class="metric-foot">模拟清分与对账数据</div></article></div>
           <div class="settlement-flow"><div><CreditCard :size="25"/><small>消费者支付</small><strong>¥100.00</strong></div><ArrowRight :size="22"/><div><Zap :size="25"/><small>规则清分</small><strong>按 10% 分账</strong></div><ArrowRight :size="22"/><div><Wallet :size="25"/><small>平台服务费</small><strong>¥10.00</strong></div><ArrowRight :size="22"/><div><Store :size="25"/><small>商户应收</small><strong>¥90.00</strong></div></div>
+          <section class="backoffice-panel redemption-table"><div class="panel-title-row"><div><h2>近期线下模拟收款</h2><p>与门店收银台共用当前浏览器模拟交易数据</p></div></div><n-data-table :columns="offlinePaymentCols" :data="state.offlineTransactions" :pagination="{pageSize:6}" :bordered="false" :scroll-x="1000"/></section>
           <section class="backoffice-panel"><div class="panel-title-row"><div><h2>模拟支付清分流水</h2><p>演示按交易额 10% 平台服务费计算，非真实支付结算</p></div><n-tag type="warning" round>沙箱模拟</n-tag></div><n-data-table :columns="settlementCols" :data="settlementRows" :bordered="false" :scroll-x="830"/></section>
         </template>
 
